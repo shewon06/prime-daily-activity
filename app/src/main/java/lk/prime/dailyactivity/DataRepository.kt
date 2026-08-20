@@ -83,7 +83,10 @@ class InMemoryDataRepository : DataRepository {
                 appointmentsPlan = a.appointmentsPlan,
                 appointmentsDone = a.appointmentsDone,
                 presentationsPlan = a.presentationsPlan,
-                presentationsDone = a.presentationsDone
+                presentationsDone = a.presentationsDone,
+                checkInTime = att.checkInTime,
+                checkOutTime = att.checkOutTime,
+                workedDays = if (att.checkedIn) 1 else 0
             )
         }
 }
