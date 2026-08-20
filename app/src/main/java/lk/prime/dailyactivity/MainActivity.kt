@@ -13,6 +13,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.google.firebase.auth.FirebaseAuth
+import kotlinx.coroutines.launch
 
 private val PrimeGreen = Color(0xFF123D2A)
 private val PrimeGold = Color(0xFFD6A62E)
@@ -27,28 +29,91 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private fun authEmail(salesCode: String): String =
+    salesCode.trim().lowercase().replace(Regex("[^a-z0-9._-]"), "-") + "@prime-staff.app"
+
 @Composable
 fun PrimeDailyActivityApp() {
     var screen by remember { mutableStateOf(AppScreen.LOGIN) }
-    var registeredProfile by remember { mutableStateOf<StaffProfile?>(null) }
+    var currentProfile by remember { mutableStateOf<StaffProfile?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val auth = remember { FirebaseAuth.getInstance() }
+    val repository = remember { FirebaseDataRepository() }
 
     MaterialTheme(colorScheme = lightColorScheme(primary = PrimeGreen, secondary = PrimeGold, background = PrimeBg)) {
         Surface(modifier = Modifier.fillMaxSize(), color = PrimeBg) {
             when (screen) {
                 AppScreen.LOGIN -> LoginScreen(
-                    onLogin = { screen = AppScreen.ATTENDANCE },
-                    onRegister = { screen = AppScreen.REGISTER }
+                    onLogin = { code, pin ->
+                        busy = true
+                        authError = null
+                        auth.signInWithEmailAndPassword(authEmail(code), pin).addOnCompleteListener { task ->
+                            if (!task.isSuccessful) {
+                                busy = false
+                                authError = "Invalid Sales Code or PIN."
+                            } else {
+                                scope.launch {
+                                    val profile = repository.getStaffBySalesCode(code).getOrNull()
+                                    busy = false
+                                    when (profile?.approvalStatus) {
+                                        ApprovalStatus.APPROVED -> {
+                                            currentProfile = profile
+                                            screen = AppScreen.ATTENDANCE
+                                        }
+                                        ApprovalStatus.PENDING -> {
+                                            auth.signOut()
+                                            screen = AppScreen.PENDING
+                                        }
+                                        ApprovalStatus.REJECTED -> {
+                                            auth.signOut()
+                                            authError = "This registration was not approved."
+                                        }
+                                        null -> {
+                                            auth.signOut()
+                                            authError = "Staff profile not found."
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    },
+                    onRegister = { authError = null; screen = AppScreen.REGISTER },
+                    loading = busy,
+                    error = authError
                 )
                 AppScreen.REGISTER -> RegistrationScreen(
-                    onSubmit = {
-                        registeredProfile = it
-                        screen = AppScreen.PENDING
+                    onSubmit = { profile, pin ->
+                        busy = true
+                        authError = null
+                        auth.createUserWithEmailAndPassword(authEmail(profile.salesCode), pin).addOnCompleteListener { task ->
+                            if (!task.isSuccessful) {
+                                busy = false
+                                authError = task.exception?.localizedMessage ?: "Registration failed."
+                            } else {
+                                scope.launch {
+                                    val result = repository.registerStaff(profile)
+                                    busy = false
+                                    if (result.isSuccess) {
+                                        auth.signOut()
+                                        currentProfile = profile
+                                        screen = AppScreen.PENDING
+                                    } else {
+                                        auth.currentUser?.delete()
+                                        authError = result.exceptionOrNull()?.localizedMessage ?: "Could not save registration."
+                                    }
+                                }
+                            }
+                        }
                     },
-                    onBack = { screen = AppScreen.LOGIN }
+                    onBack = { authError = null; screen = AppScreen.LOGIN },
+                    loading = busy,
+                    error = authError
                 )
-                AppScreen.PENDING -> PendingApprovalScreen(onBack = { screen = AppScreen.LOGIN })
+                AppScreen.PENDING -> PendingApprovalScreen(onBack = { authError = null; screen = AppScreen.LOGIN })
                 AppScreen.ATTENDANCE -> AttendanceScreen(onContinue = { screen = AppScreen.DAILY })
-                AppScreen.DAILY -> DailyActivityScreen(registeredProfile)
+                AppScreen.DAILY -> DailyActivityScreen(currentProfile)
             }
         }
     }
@@ -79,29 +144,20 @@ private fun DailyActivityScreen(profile: StaffProfile?) {
                 PlanRow("Follow Ups", followPlan) { followPlan = it.coerceAtLeast(0) }
                 PlanRow("Appointments", appointmentPlan) { appointmentPlan = it.coerceAtLeast(0) }
                 PlanRow("Presentations", presentationPlan) { presentationPlan = it.coerceAtLeast(0) }
-                Button(
-                    onClick = { dayStarted = true },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)
-                ) { Text("START MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold) }
+                Button(onClick = { dayStarted = true }, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
+                    Text("START MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
+                }
             } else {
                 Text("TODAY'S PLAN • LOCKED 🔒", fontWeight = FontWeight.Bold, color = PrimeGreen)
                 DoneRow("Prospecting", prospectPlan, prospectDone, !dayEnded) { prospectDone = it.coerceAtLeast(0) }
                 DoneRow("Follow Ups", followPlan, followDone, !dayEnded) { followDone = it.coerceAtLeast(0) }
                 DoneRow("Appointments", appointmentPlan, appointmentDone, !dayEnded) { appointmentDone = it.coerceAtLeast(0) }
                 DoneRow("Presentations", presentationPlan, presentationDone, !dayEnded) { presentationDone = it.coerceAtLeast(0) }
-
                 val totalPlan = prospectPlan + followPlan + appointmentPlan + presentationPlan
                 val totalDone = prospectDone + followDone + appointmentDone + presentationDone
                 val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
                 Text("Daily Achievement: $pct%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
-
-                Button(
-                    onClick = { dayEnded = true },
-                    enabled = !dayEnded,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)
-                ) {
+                Button(onClick = { dayEnded = true }, enabled = !dayEnded, modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
                     Text(if (dayEnded) "DAY ENDED • LOCKED 🔒" else "END MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
                 }
             }
