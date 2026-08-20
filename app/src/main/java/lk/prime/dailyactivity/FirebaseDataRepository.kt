@@ -33,8 +33,16 @@ class FirebaseDataRepository(
     }
 
     override suspend fun saveAttendance(salesCode: String, record: AttendanceRecord): Result<Unit> = runCatching {
-        db.collection("dailyRecords").document("${todayKey()}_$salesCode")
-            .set(mapOf("salesCode" to salesCode, "date" to todayKey(), "attendance" to record.toMap()), com.google.firebase.firestore.SetOptions.merge()).await()
+        val ref = db.collection("dailyRecords").document("${todayKey()}_$salesCode")
+        val existing = ref.get().await()
+        @Suppress("UNCHECKED_CAST")
+        val existingAttendance = existing.get("attendance") as? Map<String, Any?>
+        val preservedCheckInTime = record.checkInTime ?: existingAttendance?.get("checkInTime") as? String
+        val mergedRecord = record.copy(checkInTime = preservedCheckInTime)
+        ref.set(
+            mapOf("salesCode" to salesCode, "date" to todayKey(), "attendance" to mergedRecord.toMap()),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
     }
 
     override suspend fun getTodayActivity(salesCode: String): Result<DailyActivity?> = runCatching {
@@ -60,13 +68,8 @@ class FirebaseDataRepository(
         }.await()
     }
 
-    override suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>> = runCatching {
-        summaries(zone)
-    }
-
-    override suspend fun getAllIslandSummaries(): Result<List<StaffDaySummary>> = runCatching {
-        summaries(null)
-    }
+    override suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>> = runCatching { summaries(zone) }
+    override suspend fun getAllIslandSummaries(): Result<List<StaffDaySummary>> = runCatching { summaries(null) }
 
     private suspend fun summaries(zone: String?): List<StaffDaySummary> {
         val staffQuery = if (zone == null) db.collection("staff").whereEqualTo("approvalStatus", ApprovalStatus.APPROVED.name)
