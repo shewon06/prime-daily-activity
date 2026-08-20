@@ -21,22 +21,44 @@ fun LoginScreen(
     var salesCode by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
+        modifier = Modifier
+            .fillMaxSize()
+            .statusBarsPadding()
+            .imePadding()
+            .padding(horizontal = 24.dp, vertical = 16.dp),
+        verticalArrangement = Arrangement.Top,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
+        Spacer(Modifier.height(18.dp))
         Text("PRIME", fontSize = 38.sp, fontWeight = FontWeight.Black, color = PrimeColors.Green)
         Text("Daily Activity", fontSize = 20.sp)
-        Spacer(Modifier.height(28.dp))
-        OutlinedTextField(salesCode, { salesCode = it.trim() }, label = { Text("Sales Code") }, modifier = Modifier.fillMaxWidth(), singleLine = true)
-        Spacer(Modifier.height(12.dp))
-        OutlinedTextField(pin, { pin = it }, label = { Text("PIN") }, modifier = Modifier.fillMaxWidth(), singleLine = true, visualTransformation = PasswordVisualTransformation())
+        Spacer(Modifier.height(22.dp))
+        OutlinedTextField(
+            salesCode,
+            { salesCode = it.trim() },
+            label = { Text("Sales Code") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true
+        )
+        Spacer(Modifier.height(10.dp))
+        OutlinedTextField(
+            pin,
+            { pin = it },
+            label = { Text("PIN") },
+            modifier = Modifier.fillMaxWidth(),
+            singleLine = true,
+            visualTransformation = PasswordVisualTransformation()
+        )
         if (error != null) {
-            Spacer(Modifier.height(10.dp))
+            Spacer(Modifier.height(8.dp))
             Text(error, color = MaterialTheme.colorScheme.error)
         }
-        Spacer(Modifier.height(18.dp))
-        Button(onClick = { onLogin(salesCode, pin) }, enabled = !loading && salesCode.isNotBlank() && pin.isNotBlank(), modifier = Modifier.fillMaxWidth()) {
+        Spacer(Modifier.height(14.dp))
+        Button(
+            onClick = { onLogin(salesCode, pin) },
+            enabled = !loading && salesCode.isNotBlank() && pin.isNotBlank(),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Text(if (loading) "SIGNING IN..." else "LOGIN")
         }
         TextButton(onClick = onRegister, enabled = !loading) { Text("New staff? Register here") }
