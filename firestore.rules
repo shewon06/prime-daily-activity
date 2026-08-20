@@ -1,0 +1,38 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() { return request.auth != null; }
+    function me() { return get(/databases/$(database)/documents/users/$(request.auth.uid)).data; }
+    function isAdmin() { return signedIn() && me().role == 'ADMIN'; }
+    function isZM() { return signedIn() && me().role == 'ZONAL_MANAGER'; }
+    function sameZone(zone) { return signedIn() && me().zone == zone; }
+
+    match /users/{uid} {
+      allow create: if signedIn() && request.auth.uid == uid;
+      allow read: if signedIn() && (request.auth.uid == uid || isAdmin() || (isZM() && sameZone(resource.data.zone)));
+      allow update: if isAdmin() || (signedIn() && request.auth.uid == uid && resource.data.approvalStatus == request.resource.data.approvalStatus && resource.data.role == request.resource.data.role);
+    }
+
+    match /dailyRecords/{recordId} {
+      allow read: if signedIn() && (
+        resource.data.uid == request.auth.uid ||
+        isAdmin() ||
+        (isZM() && sameZone(resource.data.zone))
+      );
+
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+
+      allow update: if signedIn() && request.auth.uid == resource.data.uid
+        && resource.data.dayLocked != true
+        && (resource.data.planLocked != true || (
+          request.resource.data.prospectingPlan == resource.data.prospectingPlan &&
+          request.resource.data.followUpsPlan == resource.data.followUpsPlan &&
+          request.resource.data.appointmentsPlan == resource.data.appointmentsPlan &&
+          request.resource.data.presentationsPlan == resource.data.presentationsPlan
+        ));
+
+      allow delete: if false;
+    }
+  }
+}
