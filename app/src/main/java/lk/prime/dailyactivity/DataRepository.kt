@@ -75,7 +75,15 @@ class InMemoryDataRepository : DataRepository {
                 dayStarted = a.planLocked,
                 dayEnded = a.dayLocked,
                 totalPlan = a.prospectingPlan + a.followUpsPlan + a.appointmentsPlan + a.presentationsPlan,
-                totalDone = a.prospectingDone + a.followUpsDone + a.appointmentsDone + a.presentationsDone
+                totalDone = a.prospectingDone + a.followUpsDone + a.appointmentsDone + a.presentationsDone,
+                prospectingPlan = a.prospectingPlan,
+                prospectingDone = a.prospectingDone,
+                followUpsPlan = a.followUpsPlan,
+                followUpsDone = a.followUpsDone,
+                appointmentsPlan = a.appointmentsPlan,
+                appointmentsDone = a.appointmentsDone,
+                presentationsPlan = a.presentationsPlan,
+                presentationsDone = a.presentationsDone
             )
         }
 }
