@@ -23,7 +23,7 @@ private val PrimeGreen = Color(0xFF123D2A)
 private val PrimeGold = Color(0xFFD6A62E)
 private val PrimeBg = Color(0xFFF5F7F3)
 
-enum class AppScreen { LOGIN, REGISTER, PENDING, ATTENDANCE, DAILY }
+enum class AppScreen { LOGIN, REGISTER, PENDING, ATTENDANCE, DAILY, MANAGEMENT }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -59,7 +59,13 @@ fun PrimeDailyActivityApp() {
                             else scope.launch {
                                 val profile = repository.getStaffBySalesCode(code).getOrNull(); busy = false
                                 when (profile?.approvalStatus) {
-                                    ApprovalStatus.APPROVED -> { currentProfile = profile; screen = AppScreen.ATTENDANCE }
+                                    ApprovalStatus.APPROVED -> {
+                                        currentProfile = profile
+                                        screen = when (profile.role) {
+                                            UserRole.ADMIN, UserRole.ZONAL_MANAGER -> AppScreen.MANAGEMENT
+                                            UserRole.STAFF -> AppScreen.ATTENDANCE
+                                        }
+                                    }
                                     ApprovalStatus.PENDING -> { auth.signOut(); screen = AppScreen.PENDING }
                                     ApprovalStatus.REJECTED -> { auth.signOut(); authError = "This registration was not approved." }
                                     null -> { auth.signOut(); authError = "Staff profile not found." }
@@ -85,6 +91,7 @@ fun PrimeDailyActivityApp() {
                 AppScreen.PENDING -> PendingApprovalScreen(onBack = { authError = null; screen = AppScreen.LOGIN })
                 AppScreen.ATTENDANCE -> AttendanceScreen(salesCode = currentProfile?.salesCode.orEmpty(), repository = repository, onContinue = { screen = AppScreen.DAILY })
                 AppScreen.DAILY -> DailyActivityScreen(currentProfile, repository)
+                AppScreen.MANAGEMENT -> currentProfile?.let { ManagementDashboardScreen(it, repository) }
             }
         }
     }
