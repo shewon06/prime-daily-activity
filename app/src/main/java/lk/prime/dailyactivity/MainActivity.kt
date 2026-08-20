@@ -15,6 +15,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.launch
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private val PrimeGreen = Color(0xFF123D2A)
 private val PrimeGold = Color(0xFFD6A62E)
@@ -31,6 +34,9 @@ class MainActivity : ComponentActivity() {
 
 private fun authEmail(salesCode: String): String =
     salesCode.trim().lowercase().replace(Regex("[^a-z0-9._-]"), "-") + "@prime-staff.app"
+
+private fun currentTime(): String =
+    SimpleDateFormat("hh:mm a", Locale.US).format(Date()).lowercase(Locale.US)
 
 @Composable
 fun PrimeDailyActivityApp() {
@@ -114,6 +120,25 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
             if (result.isSuccess) onSuccess() else error = result.exceptionOrNull()?.localizedMessage ?: "Could not save today's activity."
         }
     }
+    fun endDay() {
+        if (salesCode.isBlank() || saving || dayEnded) return
+        saving = true; error = null
+        scope.launch {
+            val activityResult = repository.saveTodayActivity(salesCode, currentActivity(planLocked = true, dayLocked = true))
+            if (activityResult.isFailure) {
+                saving = false
+                error = activityResult.exceptionOrNull()?.localizedMessage ?: "Could not end the day."
+                return@launch
+            }
+            val attendanceResult = repository.saveAttendance(
+                salesCode,
+                AttendanceRecord(checkedIn = true, checkedOut = true, checkInTime = null, checkOutTime = currentTime())
+            )
+            saving = false
+            if (attendanceResult.isSuccess) dayEnded = true
+            else error = attendanceResult.exceptionOrNull()?.localizedMessage ?: "Day ended, but checkout could not be saved."
+        }
+    }
 
     LaunchedEffect(salesCode) {
         if (salesCode.isNotBlank()) {
@@ -144,7 +169,7 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
                 }
             } else {
                 Text("TODAY'S PLAN • LOCKED 🔒", fontWeight = FontWeight.Bold, color = PrimeGreen)
-                DoneRow("Prospecting", prospectPlan, prospectDone, !dayEnded && !saving) { val old = prospectDone; prospectDone = it.coerceAtLeast(0); save(currentActivity()) { }; if (saving.not() && error != null) prospectDone = old }
+                DoneRow("Prospecting", prospectPlan, prospectDone, !dayEnded && !saving) { prospectDone = it.coerceAtLeast(0); save(currentActivity()) }
                 DoneRow("Follow Ups", followPlan, followDone, !dayEnded && !saving) { followDone = it.coerceAtLeast(0); save(currentActivity()) }
                 DoneRow("Appointments", appointmentPlan, appointmentDone, !dayEnded && !saving) { appointmentDone = it.coerceAtLeast(0); save(currentActivity()) }
                 DoneRow("Presentations", presentationPlan, presentationDone, !dayEnded && !saving) { presentationDone = it.coerceAtLeast(0); save(currentActivity()) }
@@ -152,7 +177,7 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
                 val totalDone = prospectDone + followDone + appointmentDone + presentationDone
                 val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
                 Text("Daily Achievement: $pct%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
-                Button(onClick = { save(currentActivity(planLocked = true, dayLocked = true)) { dayEnded = true } }, enabled = !dayEnded && !saving,
+                Button(onClick = { endDay() }, enabled = !dayEnded && !saving,
                     modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
                     Text(if (dayEnded) "DAY ENDED • LOCKED 🔒" else if (saving) "SAVING…" else "END MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
                 }
