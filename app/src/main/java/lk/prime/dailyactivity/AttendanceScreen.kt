@@ -1,7 +1,11 @@
 package lk.prime.dailyactivity
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.util.Base64
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -14,23 +18,92 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.google.firebase.storage.FirebaseStorage
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import kotlin.math.min
 
 private val AttendanceDark = Color(0xFF031B12)
 private val AttendanceCard = Color(0xFF0A2B1D)
 private val AttendanceGreen = Color(0xFF123D2A)
 private val AttendanceGold = Color(0xFFD6A62E)
 private val AttendanceSuccess = Color(0xFF35B94B)
+
+private suspend fun compressProfilePhoto(
+    context: android.content.Context,
+    uri: android.net.Uri
+): String = withContext(Dispatchers.IO) {
+    val original = context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it) }
+        ?: error("Could not read selected image.")
+
+    val maxDimension = 360f
+    val scale = min(1f, min(maxDimension / original.width.toFloat(), maxDimension / original.height.toFloat()))
+    val width = (original.width * scale).toInt().coerceAtLeast(1)
+    val height = (original.height * scale).toInt().coerceAtLeast(1)
+    val resized = if (width != original.width || height != original.height) {
+        Bitmap.createScaledBitmap(original, width, height, true)
+    } else {
+        original
+    }
+
+    val output = ByteArrayOutputStream()
+    resized.compress(Bitmap.CompressFormat.JPEG, 72, output)
+    val bytes = output.toByteArray()
+
+    if (resized !== original) resized.recycle()
+    original.recycle()
+
+    require(bytes.size < 700_000) { "Selected photo is too large. Please choose another photo." }
+    "data:image/jpeg;base64," + Base64.encodeToString(bytes, Base64.NO_WRAP)
+}
+
+@Composable
+private fun StaffPhotoImage(photoValue: String?, modifier: Modifier = Modifier) {
+    if (photoValue.isNullOrBlank()) {
+        Box(modifier = modifier, contentAlignment = Alignment.Center) {
+            Text("👤", fontSize = 28.sp)
+        }
+        return
+    }
+
+    if (photoValue.startsWith("data:image")) {
+        val image = remember(photoValue) {
+            runCatching {
+                val encoded = photoValue.substringAfter("base64,")
+                val bytes = Base64.decode(encoded, Base64.DEFAULT)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size)?.asImageBitmap()
+            }.getOrNull()
+        }
+        if (image != null) {
+            Image(
+                bitmap = image,
+                contentDescription = "Profile photo",
+                contentScale = ContentScale.Crop,
+                modifier = modifier
+            )
+        } else {
+            Box(modifier = modifier, contentAlignment = Alignment.Center) { Text("👤", fontSize = 28.sp) }
+        }
+    } else {
+        AsyncImage(
+            model = photoValue,
+            contentDescription = "Profile photo",
+            contentScale = ContentScale.Crop,
+            modifier = modifier
+        )
+    }
+}
 
 @Composable
 fun AttendanceScreen(
@@ -41,10 +114,11 @@ fun AttendanceScreen(
     var record by remember { mutableStateOf(AttendanceRecord()) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
-    var photoUrl by remember { mutableStateOf<String?>(null) }
+    var photoValue by remember { mutableStateOf<String?>(null) }
     var photoUploading by remember { mutableStateOf(false) }
     var photoError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
+    val context = LocalContext.current
     val now: () -> String = { SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()) }
     val date = remember { SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date()) }
     val day = remember { SimpleDateFormat("EEEE", Locale.US).format(Date()) }
@@ -52,7 +126,7 @@ fun AttendanceScreen(
     LaunchedEffect(salesCode) {
         if (salesCode.isNotBlank()) {
             repository.getStaffBySalesCode(salesCode).getOrNull()?.let {
-                photoUrl = it.photoUri
+                photoValue = it.photoUri
             }
         }
     }
@@ -63,17 +137,13 @@ fun AttendanceScreen(
             photoError = null
             scope.launch {
                 val result = runCatching {
-                    val storageRef = FirebaseStorage.getInstance()
-                        .reference
-                        .child("profilePhotos/$salesCode/profile.jpg")
-                    storageRef.putFile(uri).await()
-                    val downloadUrl = storageRef.downloadUrl.await().toString()
-                    repository.updateProfilePhoto(salesCode, downloadUrl).getOrThrow()
-                    downloadUrl
+                    val encodedPhoto = compressProfilePhoto(context, uri)
+                    repository.updateProfilePhoto(salesCode, encodedPhoto).getOrThrow()
+                    encodedPhoto
                 }
                 photoUploading = false
-                result.onSuccess { photoUrl = it }
-                    .onFailure { photoError = it.localizedMessage ?: "Could not upload profile photo." }
+                result.onSuccess { photoValue = it }
+                    .onFailure { photoError = it.localizedMessage ?: "Could not save profile photo." }
             }
         }
     }
@@ -92,21 +162,10 @@ fun AttendanceScreen(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Column(Modifier.weight(1f)) {
-                Text(
-                    "ATTENDANCE",
-                    color = Color.White,
-                    fontSize = 25.sp,
-                    fontWeight = FontWeight.Black
-                )
-                Text(
-                    "Start your workday",
-                    color = Color.White.copy(alpha = 0.65f),
-                    fontSize = 13.sp
-                )
+                Text("ATTENDANCE", color = Color.White, fontSize = 25.sp, fontWeight = FontWeight.Black)
+                Text("Start your workday", color = Color.White.copy(alpha = 0.65f), fontSize = 13.sp)
             }
-            PrimeOfficialLogo(
-                modifier = Modifier.width(126.dp).height(72.dp)
-            )
+            PrimeOfficialLogo(modifier = Modifier.width(142.dp).height(80.dp))
         }
 
         Card(
@@ -126,12 +185,7 @@ fun AttendanceScreen(
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("SALES CODE", color = Color.White.copy(alpha = 0.52f), fontSize = 10.sp)
-                    Text(
-                        salesCode.ifBlank { "—" },
-                        color = AttendanceGold,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text(salesCode.ifBlank { "—" }, color = AttendanceGold, fontSize = 16.sp, fontWeight = FontWeight.Bold)
                 }
             }
         }
@@ -149,22 +203,16 @@ fun AttendanceScreen(
                     modifier = Modifier.size(62.dp).background(AttendanceGold, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    if (!photoUrl.isNullOrBlank()) {
-                        AsyncImage(
-                            model = photoUrl,
-                            contentDescription = "Profile photo",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.size(54.dp).clip(CircleShape)
-                        )
-                    } else {
-                        Text("👤", fontSize = 28.sp)
-                    }
+                    StaffPhotoImage(
+                        photoValue = photoValue,
+                        modifier = Modifier.size(54.dp).clip(CircleShape)
+                    )
                 }
                 Spacer(Modifier.width(13.dp))
                 Column(Modifier.weight(1f)) {
                     Text("PROFILE PHOTO", color = AttendanceGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
                     Text(
-                        if (photoUrl.isNullOrBlank()) "Add your staff photo" else "Profile photo saved",
+                        if (photoValue.isNullOrBlank()) "Add your staff photo" else "Profile photo saved",
                         color = Color.White,
                         fontSize = 13.sp,
                         fontWeight = FontWeight.Bold
@@ -176,7 +224,7 @@ fun AttendanceScreen(
                     enabled = !photoUploading && salesCode.isNotBlank()
                 ) {
                     Text(
-                        if (photoUploading) "UPLOADING..." else if (photoUrl.isNullOrBlank()) "ADD" else "CHANGE",
+                        if (photoUploading) "SAVING..." else if (photoValue.isNullOrBlank()) "ADD" else "CHANGE",
                         color = AttendanceGold,
                         fontWeight = FontWeight.Black,
                         fontSize = 11.sp
@@ -226,9 +274,7 @@ fun AttendanceScreen(
             }
         }
 
-        error?.let {
-            Text(it, color = Color(0xFFFF7B7B), fontSize = 12.sp)
-        }
+        error?.let { Text(it, color = Color(0xFFFF7B7B), fontSize = 12.sp) }
 
         Button(
             onClick = {
@@ -238,11 +284,8 @@ fun AttendanceScreen(
                 scope.launch {
                     val result = repository.saveAttendance(salesCode, newRecord)
                     saving = false
-                    if (result.isSuccess) {
-                        record = newRecord
-                    } else {
-                        error = result.exceptionOrNull()?.localizedMessage ?: "Could not save attendance."
-                    }
+                    if (result.isSuccess) record = newRecord
+                    else error = result.exceptionOrNull()?.localizedMessage ?: "Could not save attendance."
                 }
             },
             enabled = !record.checkedIn && !saving && salesCode.isNotBlank(),
