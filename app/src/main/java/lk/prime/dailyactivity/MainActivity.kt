@@ -192,24 +192,215 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
         return
     }
 
-    Column {
-        PrimeHeader()
-        Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-            Text(profile?.fullName ?: "PRIME Staff", fontSize = 14.sp, color = Color.Gray)
-            Text("Your Daily Activity", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
-            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            Text("TODAY'S PLAN • LOCKED 🔒", fontWeight = FontWeight.Bold, color = PrimeGreen)
-            DoneRow("Prospecting", prospectPlan, prospectDone, !dayEnded && !saving) { prospectDone = it.coerceAtLeast(0); save(currentActivity()) }
-            DoneRow("Follow Ups", followPlan, followDone, !dayEnded && !saving) { followDone = it.coerceAtLeast(0); save(currentActivity()) }
-            DoneRow("Appointments", appointmentPlan, appointmentDone, !dayEnded && !saving) { appointmentDone = it.coerceAtLeast(0); save(currentActivity()) }
-            DoneRow("Presentations", presentationPlan, presentationDone, !dayEnded && !saving) { presentationDone = it.coerceAtLeast(0); save(currentActivity()) }
-            val totalPlan = prospectPlan + followPlan + appointmentPlan + presentationPlan
-            val totalDone = prospectDone + followDone + appointmentDone + presentationDone
-            val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
-            Text("Daily Achievement: $pct%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
-            Button(onClick = { endDay() }, enabled = !dayEnded && !saving,
-                modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
-                Text(if (dayEnded) "DAY ENDED • LOCKED 🔒" else if (saving) "SAVING…" else "END MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
+    DailyPerformanceScreen(
+        profile = profile,
+        prospectPlan = prospectPlan,
+        followPlan = followPlan,
+        appointmentPlan = appointmentPlan,
+        presentationPlan = presentationPlan,
+        prospectDone = prospectDone,
+        followDone = followDone,
+        appointmentDone = appointmentDone,
+        presentationDone = presentationDone,
+        dayEnded = dayEnded,
+        saving = saving,
+        error = error,
+        onProspectChange = { prospectDone = it.coerceAtLeast(0); save(currentActivity()) },
+        onFollowChange = { followDone = it.coerceAtLeast(0); save(currentActivity()) },
+        onAppointmentChange = { appointmentDone = it.coerceAtLeast(0); save(currentActivity()) },
+        onPresentationChange = { presentationDone = it.coerceAtLeast(0); save(currentActivity()) },
+        onEndDay = { endDay() }
+    )
+}
+
+@Composable
+private fun DailyPerformanceScreen(
+    profile: StaffProfile?,
+    prospectPlan: Int,
+    followPlan: Int,
+    appointmentPlan: Int,
+    presentationPlan: Int,
+    prospectDone: Int,
+    followDone: Int,
+    appointmentDone: Int,
+    presentationDone: Int,
+    dayEnded: Boolean,
+    saving: Boolean,
+    error: String?,
+    onProspectChange: (Int) -> Unit,
+    onFollowChange: (Int) -> Unit,
+    onAppointmentChange: (Int) -> Unit,
+    onPresentationChange: (Int) -> Unit,
+    onEndDay: () -> Unit
+) {
+    val totalPlan = prospectPlan + followPlan + appointmentPlan + presentationPlan
+    val totalDone = prospectDone + followDone + appointmentDone + presentationDone
+    val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
+    val date = remember { SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date()) }
+    val displayName = profile?.fullName?.ifBlank { "PRIME Staff" } ?: "PRIME Staff"
+
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PrimeDark)
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text("DAILY PERFORMANCE", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text("Update your completed activities", color = Color.White.copy(alpha = 0.70f), fontSize = 12.sp)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("◆", color = PrimeGold, fontSize = 13.sp)
+                    Spacer(Modifier.width(4.dp))
+                    Text("PRIME", color = PrimeGold, fontSize = 25.sp, fontWeight = FontWeight.Black)
+                }
+                Text("Agri Business & Plantations", color = PrimeGold, fontSize = 8.sp)
+            }
+        }
+
+        DarkPlanCard {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(displayName, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("Sales Code: ${profile?.salesCode.orEmpty()}", color = PrimeGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("TODAY", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                    Text(date, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
+        Surface(color = Color(0xFF0E3A25), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 9.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Text("TODAY'S PLAN", color = PrimeGold, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                Text("LOCKED", color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+        }
+
+        DoneTargetCard("PR", "Prospecting", prospectPlan, prospectDone, ProspectGreen, !dayEnded && !saving, onProspectChange)
+        DoneTargetCard("FU", "Follow Ups", followPlan, followDone, FollowGold, !dayEnded && !saving, onFollowChange)
+        DoneTargetCard("AP", "Appointments", appointmentPlan, appointmentDone, AppointmentOrange, !dayEnded && !saving, onAppointmentChange)
+        DoneTargetCard("PS", "Presentations", presentationPlan, presentationDone, PresentationPurple, !dayEnded && !saving, onPresentationChange)
+
+        DarkPlanCard {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text("DAILY ACHIEVEMENT", color = PrimeGold, fontSize = 12.sp, fontWeight = FontWeight.Black)
+                    Text("$pct%", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
+                    Text("$totalDone completed out of $totalPlan planned", color = Color.White.copy(alpha = 0.62f), fontSize = 10.sp)
+                }
+                Box(
+                    modifier = Modifier.size(72.dp).background(PrimeGold.copy(alpha = 0.14f), CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text("$pct%", color = PrimeGold, fontSize = 17.sp, fontWeight = FontWeight.Black)
+                }
+            }
+            LinearProgressIndicator(
+                progress = { (pct.coerceIn(0, 100) / 100f) },
+                modifier = Modifier.fillMaxWidth().height(7.dp),
+                color = PrimeGold,
+                trackColor = Color.White.copy(alpha = 0.12f)
+            )
+        }
+
+        error?.let { Text(it, color = Color(0xFFFF7777), fontSize = 12.sp) }
+
+        Button(
+            onClick = onEndDay,
+            enabled = !dayEnded && !saving,
+            modifier = Modifier.fillMaxWidth().height(62.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = PrimeGold,
+                contentColor = PrimeDark,
+                disabledContainerColor = Color(0xFF18452E),
+                disabledContentColor = Color.White.copy(alpha = 0.65f)
+            )
+        ) {
+            Text(
+                when {
+                    dayEnded -> "DAY ENDED • LOCKED"
+                    saving -> "SAVING…"
+                    else -> "END MY DAY  🔒"
+                },
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+
+        Text(
+            if (dayEnded) "Your workday is closed. Today's activity is locked."
+            else "Update DONE counts as you complete activities. End your day when work is finished.",
+            color = Color.White.copy(alpha = 0.58f),
+            fontSize = 10.sp,
+            modifier = Modifier.padding(bottom = 18.dp)
+        )
+    }
+}
+
+@Composable
+private fun DoneTargetCard(
+    icon: String,
+    title: String,
+    plan: Int,
+    done: Int,
+    accent: Color,
+    enabled: Boolean,
+    onChange: (Int) -> Unit
+) {
+    DarkPlanCard {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(42.dp).background(accent.copy(alpha = 0.26f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(icon, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+            }
+            Spacer(Modifier.width(11.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text("PLAN  $plan", color = accent, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("DONE", color = Color.White.copy(alpha = 0.62f), fontSize = 8.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = { onChange((done - 1).coerceAtLeast(0)) },
+                        enabled = enabled,
+                        modifier = Modifier.size(39.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = accent.copy(alpha = 0.16f),
+                            contentColor = accent,
+                            disabledContainerColor = Color.White.copy(alpha = 0.05f),
+                            disabledContentColor = Color.White.copy(alpha = 0.25f)
+                        )
+                    ) { Text("−", fontSize = 20.sp) }
+                    Text(" $done ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
+                    Button(
+                        onClick = { onChange(done + 1) },
+                        enabled = enabled,
+                        modifier = Modifier.size(39.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = accent.copy(alpha = 0.16f),
+                            contentColor = accent,
+                            disabledContainerColor = Color.White.copy(alpha = 0.05f),
+                            disabledContentColor = Color.White.copy(alpha = 0.25f)
+                        )
+                    ) { Text("+", fontSize = 20.sp) }
+                }
             }
         }
     }
