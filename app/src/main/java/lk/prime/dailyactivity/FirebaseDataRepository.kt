@@ -13,6 +13,9 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
     override suspend fun getStaffBySalesCode(salesCode: String): Result<StaffProfile?> = runCatching { db.collection("staff").document(salesCode).get().await().toStaffProfile() }
     override suspend fun getPendingRegistrations(): Result<List<StaffProfile>> = runCatching { db.collection("staff").whereEqualTo("approvalStatus", ApprovalStatus.PENDING.name).get().await().documents.mapNotNull { it.toStaffProfile() } }
     override suspend fun setApproval(salesCode: String, status: ApprovalStatus): Result<Unit> = runCatching { db.collection("staff").document(salesCode).update("approvalStatus", status.name).await() }
+    override suspend fun updateProfilePhoto(salesCode: String, photoUrl: String): Result<Unit> = runCatching {
+        db.collection("staff").document(salesCode).update("photoUri", photoUrl).await()
+    }
     override suspend fun saveAttendance(salesCode: String, record: AttendanceRecord): Result<Unit> = runCatching {
         val ref = db.collection("dailyRecords").document("${todayKey()}_$salesCode"); val existing = ref.get().await(); @Suppress("UNCHECKED_CAST") val existingAttendance = existing.get("attendance") as? Map<String, Any?>
         val mergedRecord = record.copy(checkInTime = record.checkInTime ?: existingAttendance?.get("checkInTime") as? String)
