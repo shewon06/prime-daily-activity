@@ -3,12 +3,21 @@ package lk.prime.dailyactivity
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+private val DashboardGreen = Color(0xFF123D2A)
+private val DashboardGold = Color(0xFFD6A62E)
+private val DashboardRed = Color(0xFFD32F2F)
+private val DashboardBlue = Color(0xFF1565C0)
+private val DashboardPurple = Color(0xFF6A3DB8)
 
 data class StaffDaySummary(
     val salesCode: String,
@@ -30,7 +39,7 @@ fun RegistrationApprovalScreen(
     onReject: (StaffProfile) -> Unit
 ) {
     Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text("Registration Approvals", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PrimeColors.Green)
+        Text("Registration Approvals", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = DashboardGreen)
         Text("${pending.size} pending")
         Spacer(Modifier.height(12.dp))
         LazyColumn(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -51,50 +60,172 @@ fun RegistrationApprovalScreen(
 }
 
 @Composable
+fun ManagementDashboardScreen(
+    profile: StaffProfile,
+    repository: DataRepository
+) {
+    var staff by remember { mutableStateOf<List<StaffDaySummary>>(emptyList()) }
+    var loading by remember { mutableStateOf(true) }
+    var error by remember { mutableStateOf<String?>(null) }
+
+    suspend fun loadDashboard() {
+        loading = true
+        error = null
+        val result = if (profile.role == UserRole.ZONAL_MANAGER) {
+            repository.getZoneSummaries(profile.zone)
+        } else {
+            repository.getAllIslandSummaries()
+        }
+        result.onSuccess { staff = it }
+            .onFailure { error = it.localizedMessage ?: "Could not load dashboard." }
+        loading = false
+    }
+
+    LaunchedEffect(profile.salesCode) { loadDashboard() }
+
+    Column(Modifier.fillMaxSize()) {
+        Surface(color = DashboardGreen, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(18.dp)) {
+                Text("PRIME", color = DashboardGold, fontSize = 27.sp, fontWeight = FontWeight.Black)
+                Text("Management Dashboard", color = Color.White, fontSize = 14.sp)
+            }
+        }
+
+        if (loading) {
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = DashboardGreen)
+            }
+        } else {
+            Dashboard(
+                title = if (profile.role == UserRole.ZONAL_MANAGER) profile.zone else "All Island",
+                subtitle = if (profile.role == UserRole.ZONAL_MANAGER) "Zonal Manager Dashboard" else "Company Overview & Performance",
+                staff = staff,
+                error = error
+            )
+        }
+    }
+}
+
+@Composable
 fun ZonalManagerDashboard(zone: String, staff: List<StaffDaySummary>) {
-    val visible = staff.filter { it.zone == zone }
-    Dashboard(title = "$zone Zone", subtitle = "Zonal Manager Dashboard", staff = visible)
+    Dashboard(title = zone, subtitle = "Zonal Manager Dashboard", staff = staff)
 }
 
 @Composable
 fun AllIslandDashboard(staff: List<StaffDaySummary>) {
-    Dashboard(title = "All Island", subtitle = "Management Dashboard", staff = staff)
+    Dashboard(title = "All Island", subtitle = "Company Overview & Performance", staff = staff)
 }
 
 @Composable
-private fun Dashboard(title: String, subtitle: String, staff: List<StaffDaySummary>) {
+private fun Dashboard(
+    title: String,
+    subtitle: String,
+    staff: List<StaffDaySummary>,
+    error: String? = null
+) {
     val present = staff.count { it.present }
+    val absent = staff.size - present
     val started = staff.count { it.dayStarted }
     val ended = staff.count { it.dayEnded }
     val plan = staff.sumOf { it.totalPlan }
     val done = staff.sumOf { it.totalDone }
     val achievement = if (plan == 0) 0 else done * 100 / plan
 
-    Column(Modifier.fillMaxSize().padding(16.dp)) {
-        Text(title, fontSize = 30.sp, fontWeight = FontWeight.Bold, color = PrimeColors.Green)
-        Text(subtitle)
-        Spacer(Modifier.height(14.dp))
-        Text("Staff ${staff.size}   •   Present $present   •   Started $started   •   Ended $ended", fontWeight = FontWeight.Bold)
-        Text("Plan $plan   •   Done $done   •   Achievement $achievement%", color = PrimeColors.Green)
-        Spacer(Modifier.height(14.dp))
-        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(staff) { member ->
-                Card(Modifier.fillMaxWidth()) {
-                    Column(Modifier.padding(14.dp)) {
-                        Text(member.name, fontWeight = FontWeight.Bold)
-                        Text("${member.salesCode} • ${member.zone}")
-                        Text("Plan ${member.totalPlan}  |  Done ${member.totalDone}  |  ${member.achievement}%")
-                        Text(
-                            when {
-                                member.dayEnded -> "Day Ended 🔒"
-                                member.dayStarted -> "Day In Progress"
-                                member.present -> "Present • Not Started"
-                                else -> "Not Present"
-                            }
-                        )
-                    }
+    LazyColumn(
+        modifier = Modifier.fillMaxSize().padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        item {
+            Text(title.uppercase(), fontSize = 28.sp, fontWeight = FontWeight.Bold, color = DashboardGreen)
+            Text(subtitle, color = Color.Gray)
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(top = 8.dp)) }
+        }
+
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SummaryCard("TOTAL STAFF", staff.size, DashboardGreen, Modifier.weight(1f))
+                SummaryCard("PRESENT", present, DashboardGreen, Modifier.weight(1f))
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SummaryCard("ABSENT", absent, DashboardRed, Modifier.weight(1f))
+                SummaryCard("DAY STARTED", started, DashboardBlue, Modifier.weight(1f))
+            }
+        }
+        item {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                SummaryCard("DAY ENDED", ended, DashboardPurple, Modifier.weight(1f))
+                SummaryCard("ACHIEVEMENT", achievement, DashboardGold, Modifier.weight(1f), "%")
+            }
+        }
+
+        item {
+            Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
+                Column(Modifier.padding(16.dp)) {
+                    Text("ACTIVITY SUMMARY", fontWeight = FontWeight.Bold, color = DashboardGreen)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Total Plan  $plan", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Total Done  $done", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                    Text("Overall Achievement  $achievement%", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = DashboardGreen)
+                    Spacer(Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { (achievement.coerceIn(0, 100) / 100f) },
+                        modifier = Modifier.fillMaxWidth(),
+                        color = DashboardGreen
+                    )
                 }
             }
+        }
+
+        item {
+            Text("STAFF STATUS", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen)
+        }
+
+        items(staff.sortedByDescending { it.achievement }) { member ->
+            Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+                Column(Modifier.padding(14.dp)) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text(member.name, fontWeight = FontWeight.Bold)
+                        Text("${member.achievement}%", fontWeight = FontWeight.Bold, color = DashboardGreen)
+                    }
+                    Text("${member.salesCode} • ${member.zone}", color = Color.Gray, fontSize = 12.sp)
+                    Spacer(Modifier.height(5.dp))
+                    Text("Plan ${member.totalPlan}  |  Done ${member.totalDone}")
+                    Text(
+                        when {
+                            member.dayEnded -> "Day Ended • Locked"
+                            member.dayStarted -> "Day In Progress"
+                            member.present -> "Present • Not Started"
+                            else -> "Absent"
+                        },
+                        color = when {
+                            member.dayEnded -> DashboardPurple
+                            member.dayStarted -> DashboardBlue
+                            member.present -> DashboardGreen
+                            else -> DashboardRed
+                        },
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SummaryCard(
+    label: String,
+    value: Int,
+    accent: Color,
+    modifier: Modifier = Modifier,
+    suffix: String = ""
+) {
+    Card(modifier = modifier, shape = RoundedCornerShape(16.dp)) {
+        Column(Modifier.padding(15.dp)) {
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Spacer(Modifier.height(4.dp))
+            Text("$value$suffix", fontSize = 28.sp, fontWeight = FontWeight.Black, color = accent)
         }
     }
 }
