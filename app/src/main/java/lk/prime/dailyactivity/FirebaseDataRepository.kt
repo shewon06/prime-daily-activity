@@ -80,9 +80,24 @@ class FirebaseDataRepository(
             val doc = records[p.salesCode]
             @Suppress("UNCHECKED_CAST") val a = (doc?.get("activity") as? Map<String, Any?>)?.toDailyActivity() ?: DailyActivity()
             @Suppress("UNCHECKED_CAST") val att = (doc?.get("attendance") as? Map<String, Any?>)
-            StaffDaySummary(p.salesCode, p.fullName, p.zone, att?.get("checkedIn") as? Boolean ?: false, a.planLocked, a.dayLocked,
-                a.prospectingPlan + a.followUpsPlan + a.appointmentsPlan + a.presentationsPlan,
-                a.prospectingDone + a.followUpsDone + a.appointmentsDone + a.presentationsDone)
+            StaffDaySummary(
+                salesCode = p.salesCode,
+                name = p.fullName,
+                zone = p.zone,
+                present = att?.get("checkedIn") as? Boolean ?: false,
+                dayStarted = a.planLocked,
+                dayEnded = a.dayLocked,
+                totalPlan = a.prospectingPlan + a.followUpsPlan + a.appointmentsPlan + a.presentationsPlan,
+                totalDone = a.prospectingDone + a.followUpsDone + a.appointmentsDone + a.presentationsDone,
+                prospectingPlan = a.prospectingPlan,
+                prospectingDone = a.prospectingDone,
+                followUpsPlan = a.followUpsPlan,
+                followUpsDone = a.followUpsDone,
+                appointmentsPlan = a.appointmentsPlan,
+                appointmentsDone = a.appointmentsDone,
+                presentationsPlan = a.presentationsPlan,
+                presentationsDone = a.presentationsDone
+            )
         }
     }
 }
