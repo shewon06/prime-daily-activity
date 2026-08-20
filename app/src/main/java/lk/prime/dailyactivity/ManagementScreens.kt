@@ -18,6 +18,7 @@ private val DashboardGold = Color(0xFFD6A62E)
 private val DashboardRed = Color(0xFFD32F2F)
 private val DashboardBlue = Color(0xFF1565C0)
 private val DashboardPurple = Color(0xFF6A3DB8)
+private val DashboardOrange = Color(0xFFEF6C00)
 
 data class StaffDaySummary(
     val salesCode: String,
@@ -27,7 +28,15 @@ data class StaffDaySummary(
     val dayStarted: Boolean,
     val dayEnded: Boolean,
     val totalPlan: Int,
-    val totalDone: Int
+    val totalDone: Int,
+    val prospectingPlan: Int = 0,
+    val prospectingDone: Int = 0,
+    val followUpsPlan: Int = 0,
+    val followUpsDone: Int = 0,
+    val appointmentsPlan: Int = 0,
+    val appointmentsDone: Int = 0,
+    val presentationsPlan: Int = 0,
+    val presentationsDone: Int = 0
 ) {
     val achievement: Int get() = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
 }
@@ -131,6 +140,15 @@ private fun Dashboard(
     val done = staff.sumOf { it.totalDone }
     val achievement = if (plan == 0) 0 else done * 100 / plan
 
+    val prospectingPlan = staff.sumOf { it.prospectingPlan }
+    val prospectingDone = staff.sumOf { it.prospectingDone }
+    val followUpsPlan = staff.sumOf { it.followUpsPlan }
+    val followUpsDone = staff.sumOf { it.followUpsDone }
+    val appointmentsPlan = staff.sumOf { it.appointmentsPlan }
+    val appointmentsDone = staff.sumOf { it.appointmentsDone }
+    val presentationsPlan = staff.sumOf { it.presentationsPlan }
+    val presentationsDone = staff.sumOf { it.presentationsDone }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp)
@@ -162,15 +180,25 @@ private fun Dashboard(
 
         item {
             Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-                Column(Modifier.padding(16.dp)) {
-                    Text("ACTIVITY SUMMARY", fontWeight = FontWeight.Bold, color = DashboardGreen)
-                    Spacer(Modifier.height(8.dp))
-                    Text("Total Plan  $plan", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Total Done  $done", fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
-                    Text("Overall Achievement  $achievement%", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = DashboardGreen)
-                    Spacer(Modifier.height(8.dp))
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("ACTIVITY SUMMARY • PLAN vs DONE", fontWeight = FontWeight.Bold, color = DashboardGreen)
+                    ActivitySummaryRow("Prospecting", prospectingPlan, prospectingDone, DashboardGreen)
+                    HorizontalDivider()
+                    ActivitySummaryRow("Follow Ups", followUpsPlan, followUpsDone, DashboardOrange)
+                    HorizontalDivider()
+                    ActivitySummaryRow("Appointments", appointmentsPlan, appointmentsDone, DashboardRed)
+                    HorizontalDivider()
+                    ActivitySummaryRow("Presentations", presentationsPlan, presentationsDone, DashboardPurple)
+                    HorizontalDivider()
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column {
+                            Text("TOTAL", fontWeight = FontWeight.Bold)
+                            Text("Plan $plan  •  Done $done", fontSize = 13.sp, color = Color.Gray)
+                        }
+                        Text("$achievement%", fontSize = 22.sp, fontWeight = FontWeight.Black, color = DashboardGreen)
+                    }
                     LinearProgressIndicator(
-                        progress = { (achievement.coerceIn(0, 100) / 100f) },
+                        progress = { achievement.coerceIn(0, 100) / 100f },
                         modifier = Modifier.fillMaxWidth(),
                         color = DashboardGreen
                     )
@@ -210,6 +238,22 @@ private fun Dashboard(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun ActivitySummaryRow(label: String, plan: Int, done: Int, accent: Color) {
+    val achievement = if (plan == 0) 0 else done * 100 / plan
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(label, fontWeight = FontWeight.SemiBold)
+            Text("Plan $plan  •  Done $done", fontSize = 13.sp, color = Color.Gray)
+        }
+        Text("$achievement%", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = accent)
     }
 }
 
