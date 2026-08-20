@@ -62,10 +62,9 @@ fun AttendanceScreen(
                     fontSize = 13.sp
                 )
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Text("PRIME", color = AttendanceGold, fontSize = 28.sp, fontWeight = FontWeight.Black)
-                Text("AGRI BUSINESS", color = AttendanceGold.copy(alpha = 0.85f), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-            }
+            PrimeOfficialLogo(
+                modifier = Modifier.width(126.dp).height(72.dp)
+            )
         }
 
         Card(
