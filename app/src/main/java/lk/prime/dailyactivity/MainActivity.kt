@@ -15,6 +15,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.google.firebase.auth.FirebaseAuth
@@ -236,18 +237,27 @@ private fun MyDayPlanScreen(
     val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "P"
 
     Column(
-        modifier = Modifier.fillMaxSize().background(PrimeDark).verticalScroll(rememberScrollState()).padding(18.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+        modifier = Modifier
+            .fillMaxSize()
+            .background(PrimeDark)
+            .statusBarsPadding()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 18.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(10.dp)
     ) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text("‹", color = PrimeGold, fontSize = 40.sp, fontWeight = FontWeight.Light)
-            Spacer(Modifier.width(10.dp))
+            Text("‹", color = PrimeGold, fontSize = 36.sp, fontWeight = FontWeight.Light)
+            Spacer(Modifier.width(8.dp))
             Column(Modifier.weight(1f)) {
-                Text("MY DAY PLAN", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
-                Text("Plan your activities for today", color = Color.White.copy(alpha = 0.72f), fontSize = 13.sp)
+                Text("MY DAY PLAN", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                Text("Plan your activities for today", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp)
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text("PRIME", color = PrimeGold, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text("◆", color = PrimeGold, fontSize = 13.sp)
+                    Spacer(Modifier.width(4.dp))
+                    Text("PRIME", color = PrimeGold, fontSize = 25.sp, fontWeight = FontWeight.Black)
+                }
                 Text("Agri Business & Plantations", color = PrimeGold, fontSize = 8.sp)
             }
         }
@@ -255,58 +265,70 @@ private fun MyDayPlanScreen(
         DarkPlanCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier.size(62.dp).background(PrimeGold, CircleShape),
+                    modifier = Modifier.size(58.dp).background(PrimeGold, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
                     Box(
-                        modifier = Modifier.size(54.dp).background(Color(0xFFECECEC), CircleShape),
+                        modifier = Modifier.size(50.dp).background(Color(0xFFECECEC), CircleShape),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(initial, color = PrimeGreen, fontSize = 27.sp, fontWeight = FontWeight.Black)
+                        Text(initial, color = PrimeGreen, fontSize = 25.sp, fontWeight = FontWeight.Black)
                     }
                 }
-                Spacer(Modifier.width(14.dp))
+                Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
-                    Text("Good Morning, $displayName 👋", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
-                    Text("Sales Code: ${profile?.salesCode.orEmpty()}", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-                    Text("${profile?.role?.name?.replace('_', ' ') ?: "STAFF"} – ${profile?.zone.orEmpty()}", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+                    Text("Good Morning, $displayName 👋", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
+                    Text("Sales Code: ${profile?.salesCode.orEmpty()}", color = PrimeGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("${profile?.role?.name?.replace('_', ' ') ?: "STAFF"} – ${profile?.zone.orEmpty()}", color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp)
                 }
+                Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
-                    Text("Today", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp)
-                    Text(date, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    Text(day, color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
+                    Text("Today", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
+                    Text(date, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text(day, color = Color.White.copy(alpha = 0.72f), fontSize = 10.sp)
                 }
             }
         }
 
         DarkPlanCard {
-            Text("ⓘ  Plan your day smart!", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-            Text("Set your targets for each activity. You can update the DONE count during the day.", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp)
+            Text("ⓘ  Plan your day smart!", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            Text("Set your targets for each activity. You can update the DONE count during the day.", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
         }
 
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-            Text("SET YOUR TARGETS FOR TODAY", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text("🔒 Locked after START MY DAY", color = Color.White.copy(alpha = 0.64f), fontSize = 10.sp)
+        Text("SET YOUR TARGETS FOR TODAY", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+        Surface(
+            color = Color(0xFF0E3A25),
+            shape = RoundedCornerShape(8.dp),
+            modifier = Modifier.align(Alignment.End)
+        ) {
+            Text(
+                "LOCKED AFTER START MY DAY",
+                color = Color.White.copy(alpha = 0.82f),
+                fontSize = 9.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
+            )
         }
 
-        TargetPlanCard("●", "Prospecting", "New Prospects", prospectPlan, ProspectGreen, onProspectChange)
-        TargetPlanCard("☎", "Follow Ups", "Existing Customers", followPlan, FollowGold, onFollowChange)
-        TargetPlanCard("◆", "Appointments", "Meetings / Appointments", appointmentPlan, AppointmentOrange, onAppointmentChange)
-        TargetPlanCard("▣", "Presentations", "Product Presentations", presentationPlan, PresentationPurple, onPresentationChange)
+        TargetPlanCard("PR", "Prospecting", "New Prospects", prospectPlan, ProspectGreen, onProspectChange)
+        TargetPlanCard("FU", "Follow Ups", "Existing Customers", followPlan, FollowGold, onFollowChange)
+        TargetPlanCard("AP", "Appointments", "Meetings / Appointments", appointmentPlan, AppointmentOrange, onAppointmentChange)
+        TargetPlanCard("PS", "Presentations", "Product Presentations", presentationPlan, PresentationPurple, onPresentationChange)
 
         DarkPlanCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Column {
-                    Text("◎  TOTAL TARGETS", color = ProspectGreen, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("TOTAL TARGETS", color = ProspectGreen, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Text("All activities combined", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
                 }
-                Text(total.toString(), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black)
+                Text(total.toString(), color = Color.White, fontSize = 29.sp, fontWeight = FontWeight.Black)
             }
         }
 
         DarkPlanCard {
-            Text("🛡  Once you tap START MY DAY, your plan will be LOCKED.", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
-            Text("You can only update DONE counts during the day.", color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
+            Text("PLAN LOCK", color = PrimeGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
+            Text("Once you tap START MY DAY, your plan will be locked.", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text("You can only update DONE counts during the day.", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
         }
 
         error?.let { Text(it, color = Color(0xFFFF7777), fontSize = 12.sp) }
@@ -314,17 +336,17 @@ private fun MyDayPlanScreen(
         Button(
             onClick = onStart,
             enabled = !saving,
-            modifier = Modifier.fillMaxWidth().height(64.dp),
+            modifier = Modifier.fillMaxWidth().height(62.dp),
             shape = RoundedCornerShape(12.dp),
             colors = ButtonDefaults.buttonColors(containerColor = PrimeGold, contentColor = PrimeDark)
         ) {
-            Text(if (saving) "SAVING…" else "▶  START MY DAY", fontSize = 19.sp, fontWeight = FontWeight.Black)
+            Text(if (saving) "SAVING…" else "▶  START MY DAY", fontSize = 18.sp, fontWeight = FontWeight.Black)
         }
 
         Text(
-            "▣  Note: Plan realistically. A good plan helps you stay focused and achieve more.",
-            color = Color.White.copy(alpha = 0.64f),
-            fontSize = 11.sp,
+            "Note: Plan realistically. A good plan helps you stay focused and achieve more.",
+            color = Color.White.copy(alpha = 0.60f),
+            fontSize = 10.sp,
             modifier = Modifier.padding(bottom = 18.dp)
         )
     }
@@ -342,32 +364,32 @@ private fun TargetPlanCard(
     DarkPlanCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
             Box(
-                modifier = Modifier.size(44.dp).background(accent.copy(alpha = 0.28f), CircleShape),
+                modifier = Modifier.size(42.dp).background(accent.copy(alpha = 0.26f), CircleShape),
                 contentAlignment = Alignment.Center
             ) {
-                Text(icon, color = accent, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+                Text(icon, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
             }
-            Spacer(Modifier.width(12.dp))
+            Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
-                Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
-                Text(subtitle, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
+                Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                Text(subtitle, color = Color.White.copy(alpha = 0.62f), fontSize = 10.sp)
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text("TARGET (PLAN)", color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Text("TARGET (PLAN)", color = accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     Button(
                         onClick = { onChange((value - 1).coerceAtLeast(0)) },
-                        modifier = Modifier.size(42.dp),
+                        modifier = Modifier.size(39.dp),
                         contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.16f), contentColor = accent)
-                    ) { Text("−", fontSize = 22.sp) }
-                    Text("  $value  ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    ) { Text("−", fontSize = 20.sp) }
+                    Text(" $value ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
                     Button(
                         onClick = { onChange(value + 1) },
-                        modifier = Modifier.size(42.dp),
+                        modifier = Modifier.size(39.dp),
                         contentPadding = PaddingValues(0.dp),
                         colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.16f), contentColor = accent)
-                    ) { Text("+", fontSize = 22.sp) }
+                    ) { Text("+", fontSize = 20.sp) }
                 }
             }
         }
@@ -382,8 +404,8 @@ private fun DarkPlanCard(content: @Composable ColumnScope.() -> Unit) {
         colors = CardDefaults.cardColors(containerColor = PrimeDarkCard)
     ) {
         Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(5.dp),
+            modifier = Modifier.padding(13.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
             content = content
         )
     }
