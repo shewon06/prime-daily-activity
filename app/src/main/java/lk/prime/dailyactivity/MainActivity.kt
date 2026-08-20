@@ -3,13 +3,8 @@ package lk.prime.dailyactivity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
-import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -24,37 +19,181 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private val PrimeGreen=Color(0xFF123D2A);private val PrimeDark=Color(0xFF031D13);private val PrimePanel=Color(0xFF082A1B);private val PrimeGold=Color(0xFFD6A62E);private val PrimeBg=Color(0xFFF5F7F3);private val PlanGreen=Color(0xFF32B84A);private val PlanOrange=Color(0xFFF59B19);private val PlanRed=Color(0xFFE76B18);private val PlanPurple=Color(0xFF9B59E8)
-enum class AppScreen{LOGIN,REGISTER,PENDING,ATTENDANCE,DAILY,MANAGEMENT}
-class MainActivity:ComponentActivity(){override fun onCreate(savedInstanceState:Bundle?){super.onCreate(savedInstanceState);setContent{PrimeDailyActivityApp()}}}
-private fun authEmail(s:String)=s.trim().lowercase().replace(Regex("[^a-z0-9._-]"),"-")+"@prime-staff.app"
-private fun currentTime()=SimpleDateFormat("hh:mm a",Locale.US).format(Date()).lowercase(Locale.US)
+private val PrimeGreen = Color(0xFF123D2A)
+private val PrimeGold = Color(0xFFD6A62E)
+private val PrimeBg = Color(0xFFF5F7F3)
 
-@Composable fun PrimeDailyActivityApp(){var screen by remember{mutableStateOf(AppScreen.LOGIN)};var currentProfile by remember{mutableStateOf<StaffProfile?>(null)};var busy by remember{mutableStateOf(false)};var authError by remember{mutableStateOf<String?>(null)};val scope=rememberCoroutineScope();val auth=remember{FirebaseAuth.getInstance()};val repository=remember{FirebaseDataRepository()};MaterialTheme(colorScheme=lightColorScheme(primary=PrimeGreen,secondary=PrimeGold,background=PrimeBg)){Surface(Modifier.fillMaxSize(),color=PrimeBg){when(screen){AppScreen.LOGIN->LoginScreen(onLogin={code,pin->busy=true;authError=null;auth.signInWithEmailAndPassword(authEmail(code),pin).addOnCompleteListener{task->if(!task.isSuccessful){busy=false;authError="Invalid Sales Code or PIN."}else scope.launch{val p=repository.getStaffBySalesCode(code).getOrNull();busy=false;when(p?.approvalStatus){ApprovalStatus.APPROVED->{currentProfile=p;screen=when(p.role){UserRole.ADMIN,UserRole.ZONAL_MANAGER->AppScreen.MANAGEMENT;UserRole.STAFF->AppScreen.ATTENDANCE}};ApprovalStatus.PENDING->{auth.signOut();screen=AppScreen.PENDING};ApprovalStatus.REJECTED->{auth.signOut();authError="This registration was not approved."};null->{auth.signOut();authError="Staff profile not found."}}}}},onRegister={authError=null;screen=AppScreen.REGISTER},loading=busy,error=authError);AppScreen.REGISTER->RegistrationScreen(onSubmit={p,pin->busy=true;authError=null;auth.createUserWithEmailAndPassword(authEmail(p.salesCode),pin).addOnCompleteListener{task->if(!task.isSuccessful){busy=false;authError=task.exception?.localizedMessage?:"Registration failed."}else scope.launch{val r=repository.registerStaff(p);busy=false;if(r.isSuccess){auth.signOut();currentProfile=p;screen=AppScreen.PENDING}else{auth.currentUser?.delete();authError=r.exceptionOrNull()?.localizedMessage?:"Could not save registration."}}}},onBack={screen=AppScreen.LOGIN},loading=busy,error=authError);AppScreen.PENDING->PendingApprovalScreen{screen=AppScreen.LOGIN};AppScreen.ATTENDANCE->AttendanceScreen(currentProfile?.salesCode.orEmpty(),repository){screen=AppScreen.DAILY};AppScreen.DAILY->DailyActivityScreen(currentProfile,repository);AppScreen.MANAGEMENT->currentProfile?.let{ManagementDashboardScreen(it,repository)}}}}}
+enum class AppScreen { LOGIN, REGISTER, PENDING, ATTENDANCE, DAILY, MANAGEMENT }
 
-@Composable private fun DailyActivityScreen(profile:StaffProfile?,repository:DataRepository){val code=profile?.salesCode.orEmpty();val scope=rememberCoroutineScope();var loaded by remember{mutableStateOf(false)};var saving by remember{mutableStateOf(false)};var error by remember{mutableStateOf<String?>(null)};var started by remember{mutableStateOf(false)};var ended by remember{mutableStateOf(false)};var pp by remember{mutableIntStateOf(0)};var fp by remember{mutableIntStateOf(0)};var ap by remember{mutableIntStateOf(0)};var prp by remember{mutableIntStateOf(0)};var pd by remember{mutableIntStateOf(0)};var fd by remember{mutableIntStateOf(0)};var ad by remember{mutableIntStateOf(0)};var prd by remember{mutableIntStateOf(0)}
- fun apply(a:DailyActivity){pp=a.prospectingPlan;fp=a.followUpsPlan;ap=a.appointmentsPlan;prp=a.presentationsPlan;pd=a.prospectingDone;fd=a.followUpsDone;ad=a.appointmentsDone;prd=a.presentationsDone;started=a.planLocked;ended=a.dayLocked};fun activity(lock:Boolean=started,end:Boolean=ended)=DailyActivity(pp,fp,ap,prp,pd,fd,ad,prd,lock,end);fun save(a:DailyActivity,onSuccess:()->Unit={}){if(code.isBlank()||saving)return;saving=true;scope.launch{val r=repository.saveTodayActivity(code,a);saving=false;if(r.isSuccess)onSuccess()else error=r.exceptionOrNull()?.localizedMessage}}
- fun endDay(){if(saving||ended)return;saving=true;scope.launch{val r=repository.saveTodayActivity(code,activity(true,true));if(r.isFailure){saving=false;error=r.exceptionOrNull()?.localizedMessage;return@launch};val ar=repository.saveAttendance(code,AttendanceRecord(true,true,null,currentTime()));saving=false;if(ar.isSuccess)ended=true else error=ar.exceptionOrNull()?.localizedMessage}}
- LaunchedEffect(code){repository.getTodayActivity(code).getOrNull()?.let{apply(it)};loaded=true}
- if(!loaded){Box(Modifier.fillMaxSize(),contentAlignment=Alignment.Center){CircularProgressIndicator()};return}
- if(!started)MyDayPlan(profile,pp,fp,ap,prp,{pp=it},{fp=it},{ap=it},{prp=it},saving,error){save(activity(true,false)){started=true}}
- else StartedDayScreen(profile,pp,fp,ap,prp,pd,fd,ad,prd,ended,saving,{pd=it;save(activity())},{fd=it;save(activity())},{ad=it;save(activity())},{prd=it;save(activity())}){endDay()}
+class MainActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        setContent { PrimeDailyActivityApp() }
+    }
 }
 
-@Composable private fun MyDayPlan(profile:StaffProfile?,pp:Int,fp:Int,ap:Int,prp:Int,onP:(Int)->Unit,onF:(Int)->Unit,onA:(Int)->Unit,onPr:(Int)->Unit,saving:Boolean,error:String?,onStart:()->Unit){val date=remember{SimpleDateFormat("dd MMM yyyy",Locale.US).format(Date())};val day=remember{SimpleDateFormat("EEEE",Locale.US).format(Date())};val total=pp+fp+ap+prp
- Column(Modifier.fillMaxSize().background(PrimeDark).verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Text("‹",color=PrimeGold,fontSize=42.sp);Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text("MY DAY PLAN",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Black);Text("Plan your activities for today",color=Color.White.copy(.8f),fontSize=14.sp)};Column(horizontalAlignment=Alignment.End){Text("PRIME",color=PrimeGold,fontSize=30.sp,fontWeight=FontWeight.Black);Text("Agri Business & Plantations",color=PrimeGold,fontSize=9.sp)}}
- DarkCard{Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Box(Modifier.size(64.dp).background(PrimeGold,CircleShape),contentAlignment=Alignment.Center){Text((profile?.fullName?.firstOrNull()?.uppercaseChar()?:'P').toString(),fontSize=30.sp,fontWeight=FontWeight.Bold,color=PrimeDark)};Spacer(Modifier.width(14.dp));Column(Modifier.weight(1f)){Text("Good Morning, ${profile?.fullName?:"PRIME Staff"} 👋",color=Color.White,fontSize=19.sp,fontWeight=FontWeight.Bold);Text("Sales Code: ${profile?.salesCode.orEmpty()}",color=PrimeGold,fontWeight=FontWeight.Bold);Text("${profile?.role?.name?.replace('_',' ')?:"STAFF"} – ${profile?.zone.orEmpty()}",color=Color.White.copy(.8f),fontSize=13.sp)};Column{Text("Today",color=Color.White.copy(.8f));Text(date,color=Color.White,fontWeight=FontWeight.Bold);Text(day,color=Color.White.copy(.8f),fontSize=12.sp)}}}
- DarkCard{Text("ⓘ  Plan your day smart!",color=Color.White,fontWeight=FontWeight.Bold);Text("Set your targets for each activity. You can update the DONE count during the day.",color=Color.White.copy(.75f),fontSize=12.sp)}
- Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween){Text("SET YOUR TARGETS FOR TODAY",color=PrimeGold,fontWeight=FontWeight.Bold);Text("🔒 Locks after START MY DAY",color=Color.White.copy(.7f),fontSize=11.sp)}
- TargetRow("👥","Prospecting","New Prospects",pp,PlanGreen,onP);TargetRow("☎","Follow Ups","Existing Customers",fp,PrimeGold,onF);TargetRow("🤝","Appointments","Meetings / Appointments",ap,PlanRed,onA);TargetRow("▣","Presentations","Product Presentations",prp,PlanPurple,onPr)
- DarkCard{Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=Alignment.CenterVertically){Column{Text("◎  TOTAL TARGETS",color=PlanGreen,fontWeight=FontWeight.Bold);Text("All activities combined",color=Color.White.copy(.7f),fontSize=12.sp)};Text("$total",color=Color.White,fontSize=30.sp,fontWeight=FontWeight.Black)}}
- DarkCard{Text("🛡  Once you tap START MY DAY, your plan will be LOCKED.",color=PrimeGold,fontWeight=FontWeight.Bold);Text("You can only update DONE counts during the day.",color=Color.White,fontSize=12.sp)};error?.let{Text(it,color=Color(0xFFFF7777))}
- Button(onClick=onStart,enabled=!saving,modifier=Modifier.fillMaxWidth().height(68.dp),colors=ButtonDefaults.buttonColors(containerColor=PrimeGold),shape=RoundedCornerShape(12.dp)){Text(if(saving)"SAVING…" else "▶  START MY DAY",color=PrimeDark,fontSize=20.sp,fontWeight=FontWeight.Black)}
- Text("▣  Note   Plan realistically. A good plan helps you stay focused and achieve more.",color=Color.White.copy(.75f),fontSize=12.sp,modifier=Modifier.padding(bottom=18.dp))}
+private fun authEmail(salesCode: String): String =
+    salesCode.trim().lowercase().replace(Regex("[^a-z0-9._-]"), "-") + "@prime-staff.app"
+
+private fun currentTime(): String =
+    SimpleDateFormat("hh:mm a", Locale.US).format(Date()).lowercase(Locale.US)
+
+@Composable
+fun PrimeDailyActivityApp() {
+    var screen by remember { mutableStateOf(AppScreen.LOGIN) }
+    var currentProfile by remember { mutableStateOf<StaffProfile?>(null) }
+    var busy by remember { mutableStateOf(false) }
+    var authError by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val auth = remember { FirebaseAuth.getInstance() }
+    val repository = remember { FirebaseDataRepository() }
+
+    MaterialTheme(colorScheme = lightColorScheme(primary = PrimeGreen, secondary = PrimeGold, background = PrimeBg)) {
+        Surface(modifier = Modifier.fillMaxSize(), color = PrimeBg) {
+            when (screen) {
+                AppScreen.LOGIN -> LoginScreen(
+                    onLogin = { code, pin ->
+                        busy = true; authError = null
+                        auth.signInWithEmailAndPassword(authEmail(code), pin).addOnCompleteListener { task ->
+                            if (!task.isSuccessful) { busy = false; authError = "Invalid Sales Code or PIN." }
+                            else scope.launch {
+                                val profile = repository.getStaffBySalesCode(code).getOrNull(); busy = false
+                                when (profile?.approvalStatus) {
+                                    ApprovalStatus.APPROVED -> {
+                                        currentProfile = profile
+                                        screen = when (profile.role) {
+                                            UserRole.ADMIN, UserRole.ZONAL_MANAGER -> AppScreen.MANAGEMENT
+                                            UserRole.STAFF -> AppScreen.ATTENDANCE
+                                        }
+                                    }
+                                    ApprovalStatus.PENDING -> { auth.signOut(); screen = AppScreen.PENDING }
+                                    ApprovalStatus.REJECTED -> { auth.signOut(); authError = "This registration was not approved." }
+                                    null -> { auth.signOut(); authError = "Staff profile not found." }
+                                }
+                            }
+                        }
+                    },
+                    onRegister = { authError = null; screen = AppScreen.REGISTER }, loading = busy, error = authError
+                )
+                AppScreen.REGISTER -> RegistrationScreen(
+                    onSubmit = { profile, pin ->
+                        busy = true; authError = null
+                        auth.createUserWithEmailAndPassword(authEmail(profile.salesCode), pin).addOnCompleteListener { task ->
+                            if (!task.isSuccessful) { busy = false; authError = task.exception?.localizedMessage ?: "Registration failed." }
+                            else scope.launch {
+                                val result = repository.registerStaff(profile); busy = false
+                                if (result.isSuccess) { auth.signOut(); currentProfile = profile; screen = AppScreen.PENDING }
+                                else { auth.currentUser?.delete(); authError = result.exceptionOrNull()?.localizedMessage ?: "Could not save registration." }
+                            }
+                        }
+                    }, onBack = { authError = null; screen = AppScreen.LOGIN }, loading = busy, error = authError
+                )
+                AppScreen.PENDING -> PendingApprovalScreen(onBack = { authError = null; screen = AppScreen.LOGIN })
+                AppScreen.ATTENDANCE -> AttendanceScreen(salesCode = currentProfile?.salesCode.orEmpty(), repository = repository, onContinue = { screen = AppScreen.DAILY })
+                AppScreen.DAILY -> DailyActivityScreen(currentProfile, repository)
+                AppScreen.MANAGEMENT -> currentProfile?.let { ManagementDashboardScreen(it, repository) }
+            }
+        }
+    }
 }
 
-@Composable private fun TargetRow(icon:String,title:String,sub:String,value:Int,accent:Color,onChange:(Int)->Unit){DarkCard{Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Box(Modifier.size(46.dp).background(accent.copy(.75f),CircleShape),contentAlignment=Alignment.Center){Text(icon,fontSize=22.sp)};Spacer(Modifier.width(12.dp));Column(Modifier.weight(1f)){Text(title,color=Color.White,fontWeight=FontWeight.Bold,fontSize=17.sp);Text(sub,color=Color.White.copy(.7f),fontSize=12.sp)};Column(horizontalAlignment=Alignment.CenterHorizontally){Text("TARGET (PLAN)",color=accent,fontSize=10.sp,fontWeight=FontWeight.Bold);Row(verticalAlignment=Alignment.CenterVertically){OutlinedButton(onClick={onChange((value-1).coerceAtLeast(0))},contentPadding=PaddingValues(0.dp),modifier=Modifier.size(46.dp),colors=ButtonDefaults.outlinedButtonColors(contentColor=accent)){Text("−",fontSize=24.sp)};Text(" $value ",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Bold);OutlinedButton(onClick={onChange(value+1)},contentPadding=PaddingValues(0.dp),modifier=Modifier.size(46.dp),colors=ButtonDefaults.outlinedButtonColors(contentColor=accent)){Text("+",fontSize=24.sp)}}}}}}
-@Composable private fun DarkCard(content:@Composable ColumnScope.()->Unit){Card(Modifier.fillMaxWidth(),colors=CardDefaults.cardColors(containerColor=PrimePanel),border=BorderStroke(1.dp,Color(0xFF235C3B)),shape=RoundedCornerShape(16.dp)){Column(Modifier.padding(14.dp),verticalArrangement=Arrangement.spacedBy(5.dp),content=content)}}
+@Composable
+private fun DailyActivityScreen(profile: StaffProfile?, repository: DataRepository) {
+    val salesCode = profile?.salesCode.orEmpty()
+    val scope = rememberCoroutineScope()
+    var loaded by remember { mutableStateOf(false) }
+    var saving by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var dayStarted by remember { mutableStateOf(false) }
+    var dayEnded by remember { mutableStateOf(false) }
+    var prospectPlan by remember { mutableIntStateOf(0) }; var followPlan by remember { mutableIntStateOf(0) }
+    var appointmentPlan by remember { mutableIntStateOf(0) }; var presentationPlan by remember { mutableIntStateOf(0) }
+    var prospectDone by remember { mutableIntStateOf(0) }; var followDone by remember { mutableIntStateOf(0) }
+    var appointmentDone by remember { mutableIntStateOf(0) }; var presentationDone by remember { mutableIntStateOf(0) }
 
-@Composable private fun StartedDayScreen(profile:StaffProfile?,pp:Int,fp:Int,ap:Int,prp:Int,pd:Int,fd:Int,ad:Int,prd:Int,ended:Boolean,saving:Boolean,onP:(Int)->Unit,onF:(Int)->Unit,onA:(Int)->Unit,onPr:(Int)->Unit,onEnd:()->Unit){val total=pp+fp+ap+prp;val done=pd+fd+ad+prd;val pct=if(total==0)0 else done*100/total;Column(Modifier.fillMaxSize().background(PrimeDark).verticalScroll(rememberScrollState()).padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){Text("PRIME",color=PrimeGold,fontSize=30.sp,fontWeight=FontWeight.Black);Text("DAILY PERFORMANCE",color=Color.White,fontSize=25.sp,fontWeight=FontWeight.Black);Text("${profile?.fullName.orEmpty()} • TODAY'S PLAN LOCKED 🔒",color=PrimeGold);DoneDarkRow("Prospecting",pp,pd,PlanGreen,!ended&&!saving,onP);DoneDarkRow("Follow Ups",fp,fd,PrimeGold,!ended&&!saving,onF);DoneDarkRow("Appointments",ap,ad,PlanRed,!ended&&!saving,onA);DoneDarkRow("Presentations",prp,prd,PlanPurple,!ended&&!saving,onPr);DarkCard{Text("DAILY ACHIEVEMENT",color=PrimeGold,fontWeight=FontWeight.Bold);Text("$done / $total   •   $pct%",color=Color.White,fontSize=28.sp,fontWeight=FontWeight.Black)};Button(onClick=onEnd,enabled=!ended&&!saving,modifier=Modifier.fillMaxWidth().height(64.dp),colors=ButtonDefaults.buttonColors(containerColor=PrimeGold)){Text(if(ended)"DAY ENDED • LOCKED 🔒" else if(saving)"SAVING…" else "END MY DAY 🔒",color=PrimeDark,fontWeight=FontWeight.Black)}}}
-@Composable private fun DoneDarkRow(title:String,plan:Int,done:Int,accent:Color,enabled:Boolean,onChange:(Int)->Unit){DarkCard{Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){Column(Modifier.weight(1f)){Text(title,color=Color.White,fontWeight=FontWeight.Bold);Text("PLAN $plan",color=accent)};OutlinedButton({onChange((done-1).coerceAtLeast(0))},enabled=enabled){Text("−")};Text("  $done  ",color=Color.White,fontSize=22.sp,fontWeight=FontWeight.Bold);OutlinedButton({onChange(done+1)},enabled=enabled){Text("+")}}}}
+    fun applyActivity(a: DailyActivity) {
+        prospectPlan = a.prospectingPlan; followPlan = a.followUpsPlan; appointmentPlan = a.appointmentsPlan; presentationPlan = a.presentationsPlan
+        prospectDone = a.prospectingDone; followDone = a.followUpsDone; appointmentDone = a.appointmentsDone; presentationDone = a.presentationsDone
+        dayStarted = a.planLocked; dayEnded = a.dayLocked
+    }
+    fun currentActivity(planLocked: Boolean = dayStarted, dayLocked: Boolean = dayEnded) = DailyActivity(
+        prospectPlan, followPlan, appointmentPlan, presentationPlan, prospectDone, followDone, appointmentDone, presentationDone, planLocked, dayLocked
+    )
+    fun save(activity: DailyActivity, onSuccess: () -> Unit = {}) {
+        if (salesCode.isBlank() || saving) return
+        saving = true; error = null
+        scope.launch {
+            val result = repository.saveTodayActivity(salesCode, activity); saving = false
+            if (result.isSuccess) onSuccess() else error = result.exceptionOrNull()?.localizedMessage ?: "Could not save today's activity."
+        }
+    }
+    fun endDay() {
+        if (salesCode.isBlank() || saving || dayEnded) return
+        saving = true; error = null
+        scope.launch {
+            val activityResult = repository.saveTodayActivity(salesCode, currentActivity(planLocked = true, dayLocked = true))
+            if (activityResult.isFailure) {
+                saving = false
+                error = activityResult.exceptionOrNull()?.localizedMessage ?: "Could not end the day."
+                return@launch
+            }
+            val attendanceResult = repository.saveAttendance(
+                salesCode,
+                AttendanceRecord(checkedIn = true, checkedOut = true, checkInTime = null, checkOutTime = currentTime())
+            )
+            saving = false
+            if (attendanceResult.isSuccess) dayEnded = true
+            else error = attendanceResult.exceptionOrNull()?.localizedMessage ?: "Day ended, but checkout could not be saved."
+        }
+    }
+
+    LaunchedEffect(salesCode) {
+        if (salesCode.isNotBlank()) {
+            val result = repository.getTodayActivity(salesCode)
+            result.getOrNull()?.let { applyActivity(it) }
+            result.exceptionOrNull()?.let { error = it.localizedMessage ?: "Could not load today's activity." }
+        }
+        loaded = true
+    }
+
+    Column {
+        PrimeHeader()
+        Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(profile?.fullName ?: "PRIME Staff", fontSize = 14.sp, color = Color.Gray)
+            Text("Your Daily Activity", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
+            if (!loaded) { CircularProgressIndicator(); Text("Loading today's plan…"); return@Column }
+            error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+
+            if (!dayStarted) {
+                Text("Enter counts only. Once START MY DAY is pressed, today's plan cannot be changed.")
+                PlanRow("Prospecting", prospectPlan) { prospectPlan = it.coerceAtLeast(0) }
+                PlanRow("Follow Ups", followPlan) { followPlan = it.coerceAtLeast(0) }
+                PlanRow("Appointments", appointmentPlan) { appointmentPlan = it.coerceAtLeast(0) }
+                PlanRow("Presentations", presentationPlan) { presentationPlan = it.coerceAtLeast(0) }
+                Button(onClick = { save(currentActivity(planLocked = true, dayLocked = false)) { dayStarted = true } }, enabled = !saving,
+                    modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
+                    Text(if (saving) "SAVING…" else "START MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
+                }
+            } else {
+                Text("TODAY'S PLAN • LOCKED 🔒", fontWeight = FontWeight.Bold, color = PrimeGreen)
+                DoneRow("Prospecting", prospectPlan, prospectDone, !dayEnded && !saving) { prospectDone = it.coerceAtLeast(0); save(currentActivity()) }
+                DoneRow("Follow Ups", followPlan, followDone, !dayEnded && !saving) { followDone = it.coerceAtLeast(0); save(currentActivity()) }
+                DoneRow("Appointments", appointmentPlan, appointmentDone, !dayEnded && !saving) { appointmentDone = it.coerceAtLeast(0); save(currentActivity()) }
+                DoneRow("Presentations", presentationPlan, presentationDone, !dayEnded && !saving) { presentationDone = it.coerceAtLeast(0); save(currentActivity()) }
+                val totalPlan = prospectPlan + followPlan + appointmentPlan + presentationPlan
+                val totalDone = prospectDone + followDone + appointmentDone + presentationDone
+                val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
+                Text("Daily Achievement: $pct%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
+                Button(onClick = { endDay() }, enabled = !dayEnded && !saving,
+                    modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
+                    Text(if (dayEnded) "DAY ENDED • LOCKED 🔒" else if (saving) "SAVING…" else "END MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+    }
+}
+
+@Composable private fun PrimeHeader() { Surface(color = PrimeGreen, modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Text("PRIME", color = PrimeGold, fontSize = 28.sp, fontWeight = FontWeight.Black); Spacer(Modifier.width(10.dp)); Text("Agri Business & Plantations", color = Color.White, fontSize = 13.sp) } } }
+@Composable private fun PlanRow(label: String, value: Int, onChange: (Int) -> Unit) = CounterCard(label, "PLAN", value, onChange)
+@Composable private fun DoneRow(label: String, plan: Int, done: Int, enabled: Boolean, onChange: (Int) -> Unit) = CounterCard(label, "DONE / $plan", done, onChange, enabled)
+@Composable private fun CounterCard(label: String, sub: String, value: Int, onChange: (Int) -> Unit, enabled: Boolean = true) { Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(label, fontWeight = FontWeight.Bold); Text(sub, fontSize = 12.sp, color = Color.Gray) }; Row(verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { onChange(value - 1) }, enabled = enabled) { Text("−") }; Text("  $value  ", fontSize = 22.sp, fontWeight = FontWeight.Bold); OutlinedButton(onClick = { onChange(value + 1) }, enabled = enabled) { Text("+") } } } } }
