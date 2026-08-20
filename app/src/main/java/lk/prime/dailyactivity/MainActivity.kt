@@ -59,48 +59,105 @@ fun PrimeDailyActivityApp() {
     val auth = remember { FirebaseAuth.getInstance() }
     val repository = remember { FirebaseDataRepository() }
 
-    MaterialTheme(colorScheme = lightColorScheme(primary = PrimeGreen, secondary = PrimeGold, background = PrimeBg)) {
+    MaterialTheme(
+        colorScheme = lightColorScheme(
+            primary = PrimeGreen,
+            secondary = PrimeGold,
+            background = PrimeBg
+        )
+    ) {
         Surface(modifier = Modifier.fillMaxSize(), color = PrimeBg) {
             when (screen) {
                 AppScreen.LOGIN -> LoginScreen(
                     onLogin = { code, pin ->
-                        busy = true; authError = null
+                        busy = true
+                        authError = null
                         auth.signInWithEmailAndPassword(authEmail(code), pin).addOnCompleteListener { task ->
-                            if (!task.isSuccessful) { busy = false; authError = "Invalid Sales Code or PIN." }
-                            else scope.launch {
-                                val profile = repository.getStaffBySalesCode(code).getOrNull(); busy = false
-                                when (profile?.approvalStatus) {
-                                    ApprovalStatus.APPROVED -> {
-                                        currentProfile = profile
-                                        screen = when (profile.role) {
-                                            UserRole.ADMIN, UserRole.ZONAL_MANAGER -> AppScreen.MANAGEMENT
-                                            UserRole.STAFF -> AppScreen.ATTENDANCE
+                            if (!task.isSuccessful) {
+                                busy = false
+                                authError = "Invalid Sales Code or PIN."
+                            } else {
+                                scope.launch {
+                                    val profile = repository.getStaffBySalesCode(code).getOrNull()
+                                    busy = false
+                                    when (profile?.approvalStatus) {
+                                        ApprovalStatus.APPROVED -> {
+                                            currentProfile = profile
+                                            screen = when (profile.role) {
+                                                UserRole.ADMIN, UserRole.ZONAL_MANAGER -> AppScreen.MANAGEMENT
+                                                UserRole.STAFF -> AppScreen.ATTENDANCE
+                                            }
+                                        }
+                                        ApprovalStatus.PENDING -> {
+                                            auth.signOut()
+                                            screen = AppScreen.PENDING
+                                        }
+                                        ApprovalStatus.REJECTED -> {
+                                            auth.signOut()
+                                            authError = "This registration was not approved."
+                                        }
+                                        null -> {
+                                            auth.signOut()
+                                            authError = "Staff profile not found."
                                         }
                                     }
-                                    ApprovalStatus.PENDING -> { auth.signOut(); screen = AppScreen.PENDING }
-                                    ApprovalStatus.REJECTED -> { auth.signOut(); authError = "This registration was not approved." }
-                                    null -> { auth.signOut(); authError = "Staff profile not found." }
                                 }
                             }
                         }
                     },
-                    onRegister = { authError = null; screen = AppScreen.REGISTER }, loading = busy, error = authError
+                    onRegister = {
+                        authError = null
+                        screen = AppScreen.REGISTER
+                    },
+                    loading = busy,
+                    error = authError
                 )
+
                 AppScreen.REGISTER -> RegistrationScreen(
                     onSubmit = { profile, pin ->
-                        busy = true; authError = null
+                        busy = true
+                        authError = null
                         auth.createUserWithEmailAndPassword(authEmail(profile.salesCode), pin).addOnCompleteListener { task ->
-                            if (!task.isSuccessful) { busy = false; authError = task.exception?.localizedMessage ?: "Registration failed." }
-                            else scope.launch {
-                                val result = repository.registerStaff(profile); busy = false
-                                if (result.isSuccess) { auth.signOut(); currentProfile = profile; screen = AppScreen.PENDING }
-                                else { auth.currentUser?.delete(); authError = result.exceptionOrNull()?.localizedMessage ?: "Could not save registration." }
+                            if (!task.isSuccessful) {
+                                busy = false
+                                authError = task.exception?.localizedMessage ?: "Registration failed."
+                            } else {
+                                scope.launch {
+                                    val result = repository.registerStaff(profile)
+                                    busy = false
+                                    if (result.isSuccess) {
+                                        auth.signOut()
+                                        currentProfile = profile
+                                        screen = AppScreen.PENDING
+                                    } else {
+                                        auth.currentUser?.delete()
+                                        authError = result.exceptionOrNull()?.localizedMessage ?: "Could not save registration."
+                                    }
+                                }
                             }
                         }
-                    }, onBack = { authError = null; screen = AppScreen.LOGIN }, loading = busy, error = authError
+                    },
+                    onBack = {
+                        authError = null
+                        screen = AppScreen.LOGIN
+                    },
+                    loading = busy,
+                    error = authError
                 )
-                AppScreen.PENDING -> PendingApprovalScreen(onBack = { authError = null; screen = AppScreen.LOGIN })
-                AppScreen.ATTENDANCE -> AttendanceScreen(salesCode = currentProfile?.salesCode.orEmpty(), repository = repository, onContinue = { screen = AppScreen.DAILY })
+
+                AppScreen.PENDING -> PendingApprovalScreen(
+                    onBack = {
+                        authError = null
+                        screen = AppScreen.LOGIN
+                    }
+                )
+
+                AppScreen.ATTENDANCE -> AttendanceScreen(
+                    salesCode = currentProfile?.salesCode.orEmpty(),
+                    repository = repository,
+                    onContinue = { screen = AppScreen.DAILY }
+                )
+
                 AppScreen.DAILY -> DailyActivityScreen(currentProfile, repository)
                 AppScreen.MANAGEMENT -> currentProfile?.let { ManagementDashboardScreen(it, repository) }
             }
@@ -112,49 +169,98 @@ fun PrimeDailyActivityApp() {
 private fun DailyActivityScreen(profile: StaffProfile?, repository: DataRepository) {
     val salesCode = profile?.salesCode.orEmpty()
     val scope = rememberCoroutineScope()
+
     var loaded by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var dayStarted by remember { mutableStateOf(false) }
     var dayEnded by remember { mutableStateOf(false) }
-    var prospectPlan by remember { mutableIntStateOf(0) }; var followPlan by remember { mutableIntStateOf(0) }
-    var appointmentPlan by remember { mutableIntStateOf(0) }; var presentationPlan by remember { mutableIntStateOf(0) }
-    var prospectDone by remember { mutableIntStateOf(0) }; var followDone by remember { mutableIntStateOf(0) }
-    var appointmentDone by remember { mutableIntStateOf(0) }; var presentationDone by remember { mutableIntStateOf(0) }
 
-    fun applyActivity(a: DailyActivity) {
-        prospectPlan = a.prospectingPlan; followPlan = a.followUpsPlan; appointmentPlan = a.appointmentsPlan; presentationPlan = a.presentationsPlan
-        prospectDone = a.prospectingDone; followDone = a.followUpsDone; appointmentDone = a.appointmentsDone; presentationDone = a.presentationsDone
-        dayStarted = a.planLocked; dayEnded = a.dayLocked
+    var prospectPlan by remember { mutableIntStateOf(0) }
+    var followPlan by remember { mutableIntStateOf(0) }
+    var appointmentPlan by remember { mutableIntStateOf(0) }
+    var presentationPlan by remember { mutableIntStateOf(0) }
+
+    var prospectDone by remember { mutableIntStateOf(0) }
+    var followDone by remember { mutableIntStateOf(0) }
+    var appointmentDone by remember { mutableIntStateOf(0) }
+    var presentationDone by remember { mutableIntStateOf(0) }
+
+    fun applyActivity(activity: DailyActivity) {
+        prospectPlan = activity.prospectingPlan
+        followPlan = activity.followUpsPlan
+        appointmentPlan = activity.appointmentsPlan
+        presentationPlan = activity.presentationsPlan
+        prospectDone = activity.prospectingDone
+        followDone = activity.followUpsDone
+        appointmentDone = activity.appointmentsDone
+        presentationDone = activity.presentationsDone
+        dayStarted = activity.planLocked
+        dayEnded = activity.dayLocked
     }
-    fun currentActivity(planLocked: Boolean = dayStarted, dayLocked: Boolean = dayEnded) = DailyActivity(
-        prospectPlan, followPlan, appointmentPlan, presentationPlan, prospectDone, followDone, appointmentDone, presentationDone, planLocked, dayLocked
+
+    fun currentActivity(
+        planLocked: Boolean = dayStarted,
+        dayLocked: Boolean = dayEnded
+    ) = DailyActivity(
+        prospectPlan,
+        followPlan,
+        appointmentPlan,
+        presentationPlan,
+        prospectDone,
+        followDone,
+        appointmentDone,
+        presentationDone,
+        planLocked,
+        dayLocked
     )
+
     fun save(activity: DailyActivity, onSuccess: () -> Unit = {}) {
         if (salesCode.isBlank() || saving) return
-        saving = true; error = null
+        saving = true
+        error = null
         scope.launch {
-            val result = repository.saveTodayActivity(salesCode, activity); saving = false
-            if (result.isSuccess) onSuccess() else error = result.exceptionOrNull()?.localizedMessage ?: "Could not save today's activity."
+            val result = repository.saveTodayActivity(salesCode, activity)
+            saving = false
+            if (result.isSuccess) {
+                onSuccess()
+            } else {
+                error = result.exceptionOrNull()?.localizedMessage ?: "Could not save today's activity."
+            }
         }
     }
+
     fun endDay() {
         if (salesCode.isBlank() || saving || dayEnded) return
-        saving = true; error = null
+        saving = true
+        error = null
         scope.launch {
-            val activityResult = repository.saveTodayActivity(salesCode, currentActivity(planLocked = true, dayLocked = true))
+            val activityResult = repository.saveTodayActivity(
+                salesCode,
+                currentActivity(planLocked = true, dayLocked = true)
+            )
             if (activityResult.isFailure) {
                 saving = false
                 error = activityResult.exceptionOrNull()?.localizedMessage ?: "Could not end the day."
                 return@launch
             }
+
             val attendanceResult = repository.saveAttendance(
                 salesCode,
-                AttendanceRecord(checkedIn = true, checkedOut = true, checkInTime = null, checkOutTime = currentTime())
+                AttendanceRecord(
+                    checkedIn = true,
+                    checkedOut = true,
+                    checkInTime = null,
+                    checkOutTime = currentTime()
+                )
             )
             saving = false
-            if (attendanceResult.isSuccess) dayEnded = true
-            else error = attendanceResult.exceptionOrNull()?.localizedMessage ?: "Day ended, but checkout could not be saved."
+            if (attendanceResult.isSuccess) {
+                dayEnded = true
+            } else {
+                error = attendanceResult.exceptionOrNull()?.localizedMessage
+                    ?: "Day ended, but checkout could not be saved."
+            }
         }
     }
 
@@ -162,7 +268,9 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
         if (salesCode.isNotBlank()) {
             val result = repository.getTodayActivity(salesCode)
             result.getOrNull()?.let { applyActivity(it) }
-            result.exceptionOrNull()?.let { error = it.localizedMessage ?: "Could not load today's activity." }
+            result.exceptionOrNull()?.let {
+                error = it.localizedMessage ?: "Could not load today's activity."
+            }
         }
         loaded = true
     }
@@ -187,7 +295,11 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
             onFollowChange = { followPlan = it.coerceAtLeast(0) },
             onAppointmentChange = { appointmentPlan = it.coerceAtLeast(0) },
             onPresentationChange = { presentationPlan = it.coerceAtLeast(0) },
-            onStart = { save(currentActivity(planLocked = true, dayLocked = false)) { dayStarted = true } }
+            onStart = {
+                save(currentActivity(planLocked = true, dayLocked = false)) {
+                    dayStarted = true
+                }
+            }
         )
         return
     }
@@ -205,10 +317,22 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
         dayEnded = dayEnded,
         saving = saving,
         error = error,
-        onProspectChange = { prospectDone = it.coerceAtLeast(0); save(currentActivity()) },
-        onFollowChange = { followDone = it.coerceAtLeast(0); save(currentActivity()) },
-        onAppointmentChange = { appointmentDone = it.coerceAtLeast(0); save(currentActivity()) },
-        onPresentationChange = { presentationDone = it.coerceAtLeast(0); save(currentActivity()) },
+        onProspectChange = {
+            prospectDone = it.coerceAtLeast(0)
+            save(currentActivity())
+        },
+        onFollowChange = {
+            followDone = it.coerceAtLeast(0)
+            save(currentActivity())
+        },
+        onAppointmentChange = {
+            appointmentDone = it.coerceAtLeast(0)
+            save(currentActivity())
+        },
+        onPresentationChange = {
+            presentationDone = it.coerceAtLeast(0)
+            save(currentActivity())
+        },
         onEndDay = { endDay() }
     )
 }
@@ -244,6 +368,7 @@ private fun DailyPerformanceScreen(
             .fillMaxSize()
             .background(PrimeDark)
             .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -253,21 +378,19 @@ private fun DailyPerformanceScreen(
                 Text("DAILY PERFORMANCE", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text("Update your completed activities", color = Color.White.copy(alpha = 0.70f), fontSize = 12.sp)
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("◆", color = PrimeGold, fontSize = 13.sp)
-                    Spacer(Modifier.width(4.dp))
-                    Text("PRIME", color = PrimeGold, fontSize = 25.sp, fontWeight = FontWeight.Black)
-                }
-                Text("Agri Business & Plantations", color = PrimeGold, fontSize = 8.sp)
-            }
+            PrimeMiniBrand()
         }
 
         DarkPlanCard {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(displayName, color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text("Sales Code: ${profile?.salesCode.orEmpty()}", color = PrimeGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text(
+                        "Sales Code: ${profile?.salesCode.orEmpty()}",
+                        color = PrimeGold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                 }
                 Column(horizontalAlignment = Alignment.End) {
                     Text("TODAY", color = Color.White.copy(alpha = 0.55f), fontSize = 9.sp, fontWeight = FontWeight.Bold)
@@ -276,7 +399,11 @@ private fun DailyPerformanceScreen(
             }
         }
 
-        Surface(color = Color(0xFF0E3A25), shape = RoundedCornerShape(10.dp), modifier = Modifier.fillMaxWidth()) {
+        Surface(
+            color = Color(0xFF0E3A25),
+            shape = RoundedCornerShape(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
             Row(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 13.dp, vertical = 9.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -297,7 +424,11 @@ private fun DailyPerformanceScreen(
                 Column(Modifier.weight(1f)) {
                     Text("DAILY ACHIEVEMENT", color = PrimeGold, fontSize = 12.sp, fontWeight = FontWeight.Black)
                     Text("$pct%", color = Color.White, fontSize = 34.sp, fontWeight = FontWeight.Black)
-                    Text("$totalDone completed out of $totalPlan planned", color = Color.White.copy(alpha = 0.62f), fontSize = 10.sp)
+                    Text(
+                        "$totalDone completed out of $totalPlan planned",
+                        color = Color.White.copy(alpha = 0.62f),
+                        fontSize = 10.sp
+                    )
                 }
                 Box(
                     modifier = Modifier.size(72.dp).background(PrimeGold.copy(alpha = 0.14f), CircleShape),
@@ -307,7 +438,7 @@ private fun DailyPerformanceScreen(
                 }
             }
             LinearProgressIndicator(
-                progress = { (pct.coerceIn(0, 100) / 100f) },
+                progress = { pct.coerceIn(0, 100) / 100f },
                 modifier = Modifier.fillMaxWidth().height(7.dp),
                 color = PrimeGold,
                 trackColor = Color.White.copy(alpha = 0.12f)
@@ -344,7 +475,7 @@ private fun DailyPerformanceScreen(
             else "Update DONE counts as you complete activities. End your day when work is finished.",
             color = Color.White.copy(alpha = 0.58f),
             fontSize = 10.sp,
-            modifier = Modifier.padding(bottom = 18.dp)
+            modifier = Modifier.padding(bottom = 12.dp)
         )
     }
 }
@@ -361,12 +492,7 @@ private fun DoneTargetCard(
 ) {
     DarkPlanCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(42.dp).background(accent.copy(alpha = 0.26f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(icon, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
-            }
+            ActivityBadge(icon, accent)
             Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -374,33 +500,7 @@ private fun DoneTargetCard(
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("DONE", color = Color.White.copy(alpha = 0.62f), fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = { onChange((done - 1).coerceAtLeast(0)) },
-                        enabled = enabled,
-                        modifier = Modifier.size(39.dp),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = accent.copy(alpha = 0.16f),
-                            contentColor = accent,
-                            disabledContainerColor = Color.White.copy(alpha = 0.05f),
-                            disabledContentColor = Color.White.copy(alpha = 0.25f)
-                        )
-                    ) { Text("−", fontSize = 20.sp) }
-                    Text(" $done ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    Button(
-                        onClick = { onChange(done + 1) },
-                        enabled = enabled,
-                        modifier = Modifier.size(39.dp),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = accent.copy(alpha = 0.16f),
-                            contentColor = accent,
-                            disabledContainerColor = Color.White.copy(alpha = 0.05f),
-                            disabledContentColor = Color.White.copy(alpha = 0.25f)
-                        )
-                    ) { Text("+", fontSize = 20.sp) }
-                }
+                CounterButtons(done, accent, enabled, onChange)
             }
         }
     }
@@ -432,6 +532,7 @@ private fun MyDayPlanScreen(
             .fillMaxSize()
             .background(PrimeDark)
             .statusBarsPadding()
+            .navigationBarsPadding()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -443,14 +544,7 @@ private fun MyDayPlanScreen(
                 Text("MY DAY PLAN", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
                 Text("Plan your activities for today", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp)
             }
-            Column(horizontalAlignment = Alignment.End) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("◆", color = PrimeGold, fontSize = 13.sp)
-                    Spacer(Modifier.width(4.dp))
-                    Text("PRIME", color = PrimeGold, fontSize = 25.sp, fontWeight = FontWeight.Black)
-                }
-                Text("Agri Business & Plantations", color = PrimeGold, fontSize = 8.sp)
-            }
+            PrimeMiniBrand()
         }
 
         DarkPlanCard {
@@ -469,8 +563,17 @@ private fun MyDayPlanScreen(
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
                     Text("Good Morning, $displayName 👋", color = Color.White, fontSize = 17.sp, fontWeight = FontWeight.Bold)
-                    Text("Sales Code: ${profile?.salesCode.orEmpty()}", color = PrimeGold, fontSize = 12.sp, fontWeight = FontWeight.Bold)
-                    Text("${profile?.role?.name?.replace('_', ' ') ?: "STAFF"} – ${profile?.zone.orEmpty()}", color = Color.White.copy(alpha = 0.75f), fontSize = 11.sp)
+                    Text(
+                        "Sales Code: ${profile?.salesCode.orEmpty()}",
+                        color = PrimeGold,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Text(
+                        "${profile?.role?.name?.replace('_', ' ') ?: "STAFF"} – ${profile?.zone.orEmpty()}",
+                        color = Color.White.copy(alpha = 0.75f),
+                        fontSize = 11.sp
+                    )
                 }
                 Spacer(Modifier.width(8.dp))
                 Column(horizontalAlignment = Alignment.End) {
@@ -483,7 +586,11 @@ private fun MyDayPlanScreen(
 
         DarkPlanCard {
             Text("ⓘ  Plan your day smart!", color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
-            Text("Set your targets for each activity. You can update the DONE count during the day.", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
+            Text(
+                "Set your targets for each activity. You can update the DONE count during the day.",
+                color = Color.White.copy(alpha = 0.72f),
+                fontSize = 11.sp
+            )
         }
 
         Text("SET YOUR TARGETS FOR TODAY", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
@@ -507,7 +614,11 @@ private fun MyDayPlanScreen(
         TargetPlanCard("PS", "Presentations", "Product Presentations", presentationPlan, PresentationPurple, onPresentationChange)
 
         DarkPlanCard {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
                 Column {
                     Text("TOTAL TARGETS", color = ProspectGreen, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     Text("All activities combined", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
@@ -518,7 +629,12 @@ private fun MyDayPlanScreen(
 
         DarkPlanCard {
             Text("PLAN LOCK", color = PrimeGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
-            Text("Once you tap START MY DAY, your plan will be locked.", color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Once you tap START MY DAY, your plan will be locked.",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.SemiBold
+            )
             Text("You can only update DONE counts during the day.", color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
         }
 
@@ -538,7 +654,7 @@ private fun MyDayPlanScreen(
             "Note: Plan realistically. A good plan helps you stay focused and achieve more.",
             color = Color.White.copy(alpha = 0.60f),
             fontSize = 10.sp,
-            modifier = Modifier.padding(bottom = 18.dp)
+            modifier = Modifier.padding(bottom = 12.dp)
         )
     }
 }
@@ -554,12 +670,7 @@ private fun TargetPlanCard(
 ) {
     DarkPlanCard {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                modifier = Modifier.size(42.dp).background(accent.copy(alpha = 0.26f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Text(icon, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
-            }
+            ActivityBadge(icon, accent)
             Spacer(Modifier.width(11.dp))
             Column(Modifier.weight(1f)) {
                 Text(title, color = Color.White, fontSize = 15.sp, fontWeight = FontWeight.Bold)
@@ -567,23 +678,73 @@ private fun TargetPlanCard(
             }
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 Text("TARGET (PLAN)", color = accent, fontSize = 8.sp, fontWeight = FontWeight.Bold)
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Button(
-                        onClick = { onChange((value - 1).coerceAtLeast(0)) },
-                        modifier = Modifier.size(39.dp),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.16f), contentColor = accent)
-                    ) { Text("−", fontSize = 20.sp) }
-                    Text(" $value ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    Button(
-                        onClick = { onChange(value + 1) },
-                        modifier = Modifier.size(39.dp),
-                        contentPadding = PaddingValues(0.dp),
-                        colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.16f), contentColor = accent)
-                    ) { Text("+", fontSize = 20.sp) }
-                }
+                CounterButtons(value, accent, true, onChange)
             }
         }
+    }
+}
+
+@Composable
+private fun ActivityBadge(icon: String, accent: Color) {
+    Box(
+        modifier = Modifier.size(42.dp).background(accent.copy(alpha = 0.26f), CircleShape),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(icon, color = accent, fontSize = 12.sp, fontWeight = FontWeight.Black, textAlign = TextAlign.Center)
+    }
+}
+
+@Composable
+private fun CounterButtons(
+    value: Int,
+    accent: Color,
+    enabled: Boolean,
+    onChange: (Int) -> Unit
+) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Button(
+            onClick = { onChange((value - 1).coerceAtLeast(0)) },
+            enabled = enabled,
+            modifier = Modifier.size(39.dp),
+            contentPadding = PaddingValues(0.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accent.copy(alpha = 0.16f),
+                contentColor = accent,
+                disabledContainerColor = Color.White.copy(alpha = 0.05f),
+                disabledContentColor = Color.White.copy(alpha = 0.25f)
+            )
+        ) {
+            Text("−", fontSize = 20.sp)
+        }
+
+        Text(" $value ", color = Color.White, fontSize = 21.sp, fontWeight = FontWeight.Black)
+
+        Button(
+            onClick = { onChange(value + 1) },
+            enabled = enabled,
+            modifier = Modifier.size(39.dp),
+            contentPadding = PaddingValues(0.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = accent.copy(alpha = 0.16f),
+                contentColor = accent,
+                disabledContainerColor = Color.White.copy(alpha = 0.05f),
+                disabledContentColor = Color.White.copy(alpha = 0.25f)
+            )
+        ) {
+            Text("+", fontSize = 20.sp)
+        }
+    }
+}
+
+@Composable
+private fun PrimeMiniBrand() {
+    Column(horizontalAlignment = Alignment.End) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("◆", color = PrimeGold, fontSize = 13.sp)
+            Spacer(Modifier.width(4.dp))
+            Text("PRIME", color = PrimeGold, fontSize = 25.sp, fontWeight = FontWeight.Black)
+        }
+        Text("Agri Business & Plantations", color = PrimeGold, fontSize = 8.sp)
     }
 }
 
@@ -601,8 +762,3 @@ private fun DarkPlanCard(content: @Composable ColumnScope.() -> Unit) {
         )
     }
 }
-
-@Composable private fun PrimeHeader() { Surface(color = PrimeGreen, modifier = Modifier.fillMaxWidth()) { Row(modifier = Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) { Text("PRIME", color = PrimeGold, fontSize = 28.sp, fontWeight = FontWeight.Black); Spacer(Modifier.width(10.dp)); Text("Agri Business & Plantations", color = Color.White, fontSize = 13.sp) } } }
-@Composable private fun PlanRow(label: String, value: Int, onChange: (Int) -> Unit) = CounterCard(label, "PLAN", value, onChange)
-@Composable private fun DoneRow(label: String, plan: Int, done: Int, enabled: Boolean, onChange: (Int) -> Unit) = CounterCard(label, "DONE / $plan", done, onChange, enabled)
-@Composable private fun CounterCard(label: String, sub: String, value: Int, onChange: (Int) -> Unit, enabled: Boolean = true) { Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) { Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) { Column { Text(label, fontWeight = FontWeight.Bold); Text(sub, fontSize = 12.sp, color = Color.Gray) }; Row(verticalAlignment = Alignment.CenterVertically) { OutlinedButton(onClick = { onChange(value - 1) }, enabled = enabled) { Text("−") }; Text("  $value  ", fontSize = 22.sp, fontWeight = FontWeight.Bold); OutlinedButton(onClick = { onChange(value + 1) }, enabled = enabled) { Text("+") } } } } }
