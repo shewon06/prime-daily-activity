@@ -3,8 +3,12 @@ package lk.prime.dailyactivity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +26,12 @@ import java.util.Locale
 private val PrimeGreen = Color(0xFF123D2A)
 private val PrimeGold = Color(0xFFD6A62E)
 private val PrimeBg = Color(0xFFF5F7F3)
+private val PrimeDark = Color(0xFF031B12)
+private val PrimeDarkCard = Color(0xFF0A2B1D)
+private val ProspectGreen = Color(0xFF35B94B)
+private val FollowGold = Color(0xFFE2A91E)
+private val AppointmentOrange = Color(0xFFEA6B16)
+private val PresentationPurple = Color(0xFF9B58E8)
 
 enum class AppScreen { LOGIN, REGISTER, PENDING, ATTENDANCE, DAILY, MANAGEMENT }
 
@@ -156,40 +166,226 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
         loaded = true
     }
 
+    if (!loaded) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator(color = PrimeGreen)
+        }
+        return
+    }
+
+    if (!dayStarted) {
+        MyDayPlanScreen(
+            profile = profile,
+            prospectPlan = prospectPlan,
+            followPlan = followPlan,
+            appointmentPlan = appointmentPlan,
+            presentationPlan = presentationPlan,
+            saving = saving,
+            error = error,
+            onProspectChange = { prospectPlan = it.coerceAtLeast(0) },
+            onFollowChange = { followPlan = it.coerceAtLeast(0) },
+            onAppointmentChange = { appointmentPlan = it.coerceAtLeast(0) },
+            onPresentationChange = { presentationPlan = it.coerceAtLeast(0) },
+            onStart = { save(currentActivity(planLocked = true, dayLocked = false)) { dayStarted = true } }
+        )
+        return
+    }
+
     Column {
         PrimeHeader()
         Column(modifier = Modifier.fillMaxSize().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             Text(profile?.fullName ?: "PRIME Staff", fontSize = 14.sp, color = Color.Gray)
             Text("Your Daily Activity", fontSize = 28.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
-            if (!loaded) { CircularProgressIndicator(); Text("Loading today's plan…"); return@Column }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            Text("TODAY'S PLAN • LOCKED 🔒", fontWeight = FontWeight.Bold, color = PrimeGreen)
+            DoneRow("Prospecting", prospectPlan, prospectDone, !dayEnded && !saving) { prospectDone = it.coerceAtLeast(0); save(currentActivity()) }
+            DoneRow("Follow Ups", followPlan, followDone, !dayEnded && !saving) { followDone = it.coerceAtLeast(0); save(currentActivity()) }
+            DoneRow("Appointments", appointmentPlan, appointmentDone, !dayEnded && !saving) { appointmentDone = it.coerceAtLeast(0); save(currentActivity()) }
+            DoneRow("Presentations", presentationPlan, presentationDone, !dayEnded && !saving) { presentationDone = it.coerceAtLeast(0); save(currentActivity()) }
+            val totalPlan = prospectPlan + followPlan + appointmentPlan + presentationPlan
+            val totalDone = prospectDone + followDone + appointmentDone + presentationDone
+            val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
+            Text("Daily Achievement: $pct%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
+            Button(onClick = { endDay() }, enabled = !dayEnded && !saving,
+                modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
+                Text(if (dayEnded) "DAY ENDED • LOCKED 🔒" else if (saving) "SAVING…" else "END MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
+            }
+        }
+    }
+}
 
-            if (!dayStarted) {
-                Text("Enter counts only. Once START MY DAY is pressed, today's plan cannot be changed.")
-                PlanRow("Prospecting", prospectPlan) { prospectPlan = it.coerceAtLeast(0) }
-                PlanRow("Follow Ups", followPlan) { followPlan = it.coerceAtLeast(0) }
-                PlanRow("Appointments", appointmentPlan) { appointmentPlan = it.coerceAtLeast(0) }
-                PlanRow("Presentations", presentationPlan) { presentationPlan = it.coerceAtLeast(0) }
-                Button(onClick = { save(currentActivity(planLocked = true, dayLocked = false)) { dayStarted = true } }, enabled = !saving,
-                    modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
-                    Text(if (saving) "SAVING…" else "START MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
+@Composable
+private fun MyDayPlanScreen(
+    profile: StaffProfile?,
+    prospectPlan: Int,
+    followPlan: Int,
+    appointmentPlan: Int,
+    presentationPlan: Int,
+    saving: Boolean,
+    error: String?,
+    onProspectChange: (Int) -> Unit,
+    onFollowChange: (Int) -> Unit,
+    onAppointmentChange: (Int) -> Unit,
+    onPresentationChange: (Int) -> Unit,
+    onStart: () -> Unit
+) {
+    val date = remember { SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date()) }
+    val day = remember { SimpleDateFormat("EEEE", Locale.US).format(Date()) }
+    val total = prospectPlan + followPlan + appointmentPlan + presentationPlan
+    val displayName = profile?.fullName?.ifBlank { "PRIME Staff" } ?: "PRIME Staff"
+    val initial = displayName.firstOrNull()?.uppercaseChar()?.toString() ?: "P"
+
+    Column(
+        modifier = Modifier.fillMaxSize().background(PrimeDark).verticalScroll(rememberScrollState()).padding(18.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("‹", color = PrimeGold, fontSize = 40.sp, fontWeight = FontWeight.Light)
+            Spacer(Modifier.width(10.dp))
+            Column(Modifier.weight(1f)) {
+                Text("MY DAY PLAN", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Black)
+                Text("Plan your activities for today", color = Color.White.copy(alpha = 0.72f), fontSize = 13.sp)
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text("PRIME", color = PrimeGold, fontSize = 28.sp, fontWeight = FontWeight.Black)
+                Text("Agri Business & Plantations", color = PrimeGold, fontSize = 8.sp)
+            }
+        }
+
+        DarkPlanCard {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier.size(62.dp).background(PrimeGold, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Box(
+                        modifier = Modifier.size(54.dp).background(Color(0xFFECECEC), CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Text(initial, color = PrimeGreen, fontSize = 27.sp, fontWeight = FontWeight.Black)
+                    }
                 }
-            } else {
-                Text("TODAY'S PLAN • LOCKED 🔒", fontWeight = FontWeight.Bold, color = PrimeGreen)
-                DoneRow("Prospecting", prospectPlan, prospectDone, !dayEnded && !saving) { prospectDone = it.coerceAtLeast(0); save(currentActivity()) }
-                DoneRow("Follow Ups", followPlan, followDone, !dayEnded && !saving) { followDone = it.coerceAtLeast(0); save(currentActivity()) }
-                DoneRow("Appointments", appointmentPlan, appointmentDone, !dayEnded && !saving) { appointmentDone = it.coerceAtLeast(0); save(currentActivity()) }
-                DoneRow("Presentations", presentationPlan, presentationDone, !dayEnded && !saving) { presentationDone = it.coerceAtLeast(0); save(currentActivity()) }
-                val totalPlan = prospectPlan + followPlan + appointmentPlan + presentationPlan
-                val totalDone = prospectDone + followDone + appointmentDone + presentationDone
-                val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
-                Text("Daily Achievement: $pct%", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = PrimeGreen)
-                Button(onClick = { endDay() }, enabled = !dayEnded && !saving,
-                    modifier = Modifier.fillMaxWidth(), colors = ButtonDefaults.buttonColors(containerColor = PrimeGold)) {
-                    Text(if (dayEnded) "DAY ENDED • LOCKED 🔒" else if (saving) "SAVING…" else "END MY DAY  🔒", color = PrimeGreen, fontWeight = FontWeight.Bold)
+                Spacer(Modifier.width(14.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Good Morning, $displayName 👋", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Sales Code: ${profile?.salesCode.orEmpty()}", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                    Text("${profile?.role?.name?.replace('_', ' ') ?: "STAFF"} – ${profile?.zone.orEmpty()}", color = Color.White.copy(alpha = 0.75f), fontSize = 12.sp)
+                }
+                Column(horizontalAlignment = Alignment.End) {
+                    Text("Today", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp)
+                    Text(date, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text(day, color = Color.White.copy(alpha = 0.72f), fontSize = 11.sp)
                 }
             }
         }
+
+        DarkPlanCard {
+            Text("ⓘ  Plan your day smart!", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+            Text("Set your targets for each activity. You can update the DONE count during the day.", color = Color.White.copy(alpha = 0.72f), fontSize = 12.sp)
+        }
+
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("SET YOUR TARGETS FOR TODAY", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("🔒 Locked after START MY DAY", color = Color.White.copy(alpha = 0.64f), fontSize = 10.sp)
+        }
+
+        TargetPlanCard("●", "Prospecting", "New Prospects", prospectPlan, ProspectGreen, onProspectChange)
+        TargetPlanCard("☎", "Follow Ups", "Existing Customers", followPlan, FollowGold, onFollowChange)
+        TargetPlanCard("◆", "Appointments", "Meetings / Appointments", appointmentPlan, AppointmentOrange, onAppointmentChange)
+        TargetPlanCard("▣", "Presentations", "Product Presentations", presentationPlan, PresentationPurple, onPresentationChange)
+
+        DarkPlanCard {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text("◎  TOTAL TARGETS", color = ProspectGreen, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Text("All activities combined", color = Color.White.copy(alpha = 0.65f), fontSize = 11.sp)
+                }
+                Text(total.toString(), color = Color.White, fontSize = 30.sp, fontWeight = FontWeight.Black)
+            }
+        }
+
+        DarkPlanCard {
+            Text("🛡  Once you tap START MY DAY, your plan will be LOCKED.", color = PrimeGold, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("You can only update DONE counts during the day.", color = Color.White.copy(alpha = 0.78f), fontSize = 12.sp)
+        }
+
+        error?.let { Text(it, color = Color(0xFFFF7777), fontSize = 12.sp) }
+
+        Button(
+            onClick = onStart,
+            enabled = !saving,
+            modifier = Modifier.fillMaxWidth().height(64.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = PrimeGold, contentColor = PrimeDark)
+        ) {
+            Text(if (saving) "SAVING…" else "▶  START MY DAY", fontSize = 19.sp, fontWeight = FontWeight.Black)
+        }
+
+        Text(
+            "▣  Note: Plan realistically. A good plan helps you stay focused and achieve more.",
+            color = Color.White.copy(alpha = 0.64f),
+            fontSize = 11.sp,
+            modifier = Modifier.padding(bottom = 18.dp)
+        )
+    }
+}
+
+@Composable
+private fun TargetPlanCard(
+    icon: String,
+    title: String,
+    subtitle: String,
+    value: Int,
+    accent: Color,
+    onChange: (Int) -> Unit
+) {
+    DarkPlanCard {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Box(
+                modifier = Modifier.size(44.dp).background(accent.copy(alpha = 0.28f), CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Text(icon, color = accent, fontSize = 21.sp, fontWeight = FontWeight.Bold)
+            }
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(title, color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                Text(subtitle, color = Color.White.copy(alpha = 0.62f), fontSize = 11.sp)
+            }
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("TARGET (PLAN)", color = accent, fontSize = 9.sp, fontWeight = FontWeight.Bold)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = { onChange((value - 1).coerceAtLeast(0)) },
+                        modifier = Modifier.size(42.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.16f), contentColor = accent)
+                    ) { Text("−", fontSize = 22.sp) }
+                    Text("  $value  ", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Black)
+                    Button(
+                        onClick = { onChange(value + 1) },
+                        modifier = Modifier.size(42.dp),
+                        contentPadding = PaddingValues(0.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = accent.copy(alpha = 0.16f), contentColor = accent)
+                    ) { Text("+", fontSize = 22.sp) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DarkPlanCard(content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = PrimeDarkCard)
+    ) {
+        Column(
+            modifier = Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(5.dp),
+            content = content
+        )
     }
 }
 
