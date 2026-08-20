@@ -1,18 +1,27 @@
 package lk.prime.dailyactivity
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import coil.compose.AsyncImage
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -32,16 +41,49 @@ fun AttendanceScreen(
     var record by remember { mutableStateOf(AttendanceRecord()) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
+    var photoUrl by remember { mutableStateOf<String?>(null) }
+    var photoUploading by remember { mutableStateOf(false) }
+    var photoError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
     val now: () -> String = { SimpleDateFormat("hh:mm a", Locale.getDefault()).format(Date()) }
     val date = remember { SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date()) }
     val day = remember { SimpleDateFormat("EEEE", Locale.US).format(Date()) }
+
+    LaunchedEffect(salesCode) {
+        if (salesCode.isNotBlank()) {
+            repository.getStaffBySalesCode(salesCode).getOrNull()?.let {
+                photoUrl = it.photoUri
+            }
+        }
+    }
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && salesCode.isNotBlank() && !photoUploading) {
+            photoUploading = true
+            photoError = null
+            scope.launch {
+                val result = runCatching {
+                    val storageRef = FirebaseStorage.getInstance()
+                        .reference
+                        .child("profilePhotos/$salesCode/profile.jpg")
+                    storageRef.putFile(uri).await()
+                    val downloadUrl = storageRef.downloadUrl.await().toString()
+                    repository.updateProfilePhoto(salesCode, downloadUrl).getOrThrow()
+                    downloadUrl
+                }
+                photoUploading = false
+                result.onSuccess { photoUrl = it }
+                    .onFailure { photoError = it.localizedMessage ?: "Could not upload profile photo." }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
             .fillMaxSize()
             .background(AttendanceDark)
             .systemBarsPadding()
+            .verticalScroll(rememberScrollState())
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
@@ -89,6 +131,55 @@ fun AttendanceScreen(
                         color = AttendanceGold,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+        }
+
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(18.dp),
+            colors = CardDefaults.cardColors(containerColor = AttendanceCard)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(62.dp).background(AttendanceGold, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (!photoUrl.isNullOrBlank()) {
+                        AsyncImage(
+                            model = photoUrl,
+                            contentDescription = "Profile photo",
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.size(54.dp).clip(CircleShape)
+                        )
+                    } else {
+                        Text("👤", fontSize = 28.sp)
+                    }
+                }
+                Spacer(Modifier.width(13.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("PROFILE PHOTO", color = AttendanceGold, fontSize = 11.sp, fontWeight = FontWeight.Black)
+                    Text(
+                        if (photoUrl.isNullOrBlank()) "Add your staff photo" else "Profile photo saved",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    photoError?.let { Text(it, color = Color(0xFFFF7B7B), fontSize = 9.sp) }
+                }
+                TextButton(
+                    onClick = { photoPicker.launch("image/*") },
+                    enabled = !photoUploading && salesCode.isNotBlank()
+                ) {
+                    Text(
+                        if (photoUploading) "UPLOADING..." else if (photoUrl.isNullOrBlank()) "ADD" else "CHANGE",
+                        color = AttendanceGold,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 11.sp
                     )
                 }
             }
@@ -194,7 +285,7 @@ fun AttendanceScreen(
             "Your check-in time is saved automatically when attendance is marked.",
             color = Color.White.copy(alpha = 0.46f),
             fontSize = 11.sp,
-            modifier = Modifier.align(Alignment.CenterHorizontally)
+            modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 10.dp)
         )
     }
 }
