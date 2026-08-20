@@ -68,16 +68,31 @@ class FirebaseDataRepository(
         }.await()
     }
 
-    override suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>> = runCatching { summaries(zone) }
-    override suspend fun getAllIslandSummaries(): Result<List<StaffDaySummary>> = runCatching { summaries(null) }
+    override suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>> = runCatching { summaries(zone, includeHistory = false) }
+    override suspend fun getAllIslandSummaries(): Result<List<StaffDaySummary>> = runCatching { summaries(null, includeHistory = true) }
 
-    private suspend fun summaries(zone: String?): List<StaffDaySummary> {
+    private suspend fun summaries(zone: String?, includeHistory: Boolean): List<StaffDaySummary> {
         val staffQuery = if (zone == null) db.collection("staff").whereEqualTo("approvalStatus", ApprovalStatus.APPROVED.name)
         else db.collection("staff").whereEqualTo("approvalStatus", ApprovalStatus.APPROVED.name).whereEqualTo("zone", zone)
         val people = staffQuery.get().await().documents.mapNotNull { it.toStaffProfile() }
-        val records = db.collection("dailyRecords").whereEqualTo("date", todayKey()).get().await().documents.associateBy { it.getString("salesCode") }
+
+        val todayRecords = db.collection("dailyRecords").whereEqualTo("date", todayKey()).get().await().documents
+        val recordsBySalesCode = todayRecords.associateBy { it.getString("salesCode") }
+
+        val workedDaysBySalesCode = if (includeHistory) {
+            db.collection("dailyRecords").get().await().documents
+                .mapNotNull { doc ->
+                    val code = doc.getString("salesCode") ?: return@mapNotNull null
+                    @Suppress("UNCHECKED_CAST")
+                    val attendance = doc.get("attendance") as? Map<String, Any?>
+                    if (attendance?.get("checkedIn") as? Boolean == true) code else null
+                }
+                .groupingBy { it }
+                .eachCount()
+        } else emptyMap()
+
         return people.map { p ->
-            val doc = records[p.salesCode]
+            val doc = recordsBySalesCode[p.salesCode]
             @Suppress("UNCHECKED_CAST") val a = (doc?.get("activity") as? Map<String, Any?>)?.toDailyActivity() ?: DailyActivity()
             @Suppress("UNCHECKED_CAST") val att = (doc?.get("attendance") as? Map<String, Any?>)
             StaffDaySummary(
@@ -96,7 +111,10 @@ class FirebaseDataRepository(
                 appointmentsPlan = a.appointmentsPlan,
                 appointmentsDone = a.appointmentsDone,
                 presentationsPlan = a.presentationsPlan,
-                presentationsDone = a.presentationsDone
+                presentationsDone = a.presentationsDone,
+                checkInTime = att?.get("checkInTime") as? String,
+                checkOutTime = att?.get("checkOutTime") as? String,
+                workedDays = workedDaysBySalesCode[p.salesCode] ?: 0
             )
         }
     }
