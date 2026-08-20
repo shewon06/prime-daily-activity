@@ -12,6 +12,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.text.SimpleDateFormat
+import java.util.Locale
 
 private val DashboardGreen = Color(0xFF123D2A)
 private val DashboardGold = Color(0xFFD6A62E)
@@ -26,7 +28,9 @@ data class StaffDaySummary(
     val prospectingPlan: Int = 0, val prospectingDone: Int = 0,
     val followUpsPlan: Int = 0, val followUpsDone: Int = 0,
     val appointmentsPlan: Int = 0, val appointmentsDone: Int = 0,
-    val presentationsPlan: Int = 0, val presentationsDone: Int = 0
+    val presentationsPlan: Int = 0, val presentationsDone: Int = 0,
+    val checkInTime: String? = null, val checkOutTime: String? = null,
+    val workedDays: Int = 0
 ) { val achievement: Int get() = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan }
 
 private data class ZoneDaySummary(val zone: String, val staff: Int, val present: Int, val plan: Int, val done: Int) {
@@ -49,15 +53,22 @@ fun ManagementDashboardScreen(profile: StaffProfile, repository: DataRepository)
     Column(Modifier.fillMaxSize()) {
         Surface(color = DashboardGreen, modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(18.dp)) { Text("PRIME", color = DashboardGold, fontSize = 27.sp, fontWeight = FontWeight.Black); Text("Management Dashboard", color = Color.White, fontSize = 14.sp) } }
         if (loading) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = DashboardGreen) }
-        else Dashboard(if (profile.role == UserRole.ZONAL_MANAGER) profile.zone else "All Island", if (profile.role == UserRole.ZONAL_MANAGER) "Zonal Manager Dashboard" else "Company Overview & Performance", staff, error, profile.role != UserRole.ZONAL_MANAGER)
+        else Dashboard(
+            title = if (profile.role == UserRole.ZONAL_MANAGER) profile.zone else "All Island",
+            subtitle = if (profile.role == UserRole.ZONAL_MANAGER) "Zonal Manager Dashboard" else "Company Overview & Performance",
+            staff = staff,
+            error = error,
+            showZonePerformance = profile.role != UserRole.ZONAL_MANAGER,
+            showAttendanceOverview = profile.role == UserRole.ADMIN
+        )
     }
 }
 
-@Composable fun ZonalManagerDashboard(zone: String, staff: List<StaffDaySummary>) { Dashboard(zone, "Zonal Manager Dashboard", staff, showZonePerformance = false) }
-@Composable fun AllIslandDashboard(staff: List<StaffDaySummary>) { Dashboard("All Island", "Company Overview & Performance", staff, showZonePerformance = true) }
+@Composable fun ZonalManagerDashboard(zone: String, staff: List<StaffDaySummary>) { Dashboard(zone, "Zonal Manager Dashboard", staff, showZonePerformance = false, showAttendanceOverview = false) }
+@Composable fun AllIslandDashboard(staff: List<StaffDaySummary>) { Dashboard("All Island", "Company Overview & Performance", staff, showZonePerformance = true, showAttendanceOverview = true) }
 
 @Composable
-private fun Dashboard(title: String, subtitle: String, staff: List<StaffDaySummary>, error: String? = null, showZonePerformance: Boolean = true) {
+private fun Dashboard(title: String, subtitle: String, staff: List<StaffDaySummary>, error: String? = null, showZonePerformance: Boolean = true, showAttendanceOverview: Boolean = false) {
     val present = staff.count { it.present }; val absent = staff.size - present; val started = staff.count { it.dayStarted }; val ended = staff.count { it.dayEnded }
     val plan = staff.sumOf { it.totalPlan }; val done = staff.sumOf { it.totalDone }; val achievement = if (plan == 0) 0 else done * 100 / plan
     val prospectingPlan = staff.sumOf { it.prospectingPlan }; val prospectingDone = staff.sumOf { it.prospectingDone }; val followUpsPlan = staff.sumOf { it.followUpsPlan }; val followUpsDone = staff.sumOf { it.followUpsDone }; val appointmentsPlan = staff.sumOf { it.appointmentsPlan }; val appointmentsDone = staff.sumOf { it.appointmentsDone }; val presentationsPlan = staff.sumOf { it.presentationsPlan }; val presentationsDone = staff.sumOf { it.presentationsDone }
@@ -69,6 +80,12 @@ private fun Dashboard(title: String, subtitle: String, staff: List<StaffDaySumma
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { SummaryCard("TOTAL STAFF", staff.size, DashboardGreen, Modifier.weight(1f)); SummaryCard("PRESENT", present, DashboardGreen, Modifier.weight(1f)) } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { SummaryCard("ABSENT", absent, DashboardRed, Modifier.weight(1f)); SummaryCard("DAY STARTED", started, DashboardBlue, Modifier.weight(1f)) } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) { SummaryCard("DAY ENDED", ended, DashboardPurple, Modifier.weight(1f)); SummaryCard("ACHIEVEMENT", achievement, DashboardGold, Modifier.weight(1f), "%") } }
+
+        if (showAttendanceOverview) {
+            item { Text("ATTENDANCE OVERVIEW", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen) }
+            items(staff.sortedWith(compareByDescending<StaffDaySummary> { it.present }.thenBy { it.name })) { AttendanceOverviewCard(it) }
+        }
+
         item { Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) { Text("ACTIVITY SUMMARY • PLAN vs DONE", fontWeight = FontWeight.Bold, color = DashboardGreen); ActivitySummaryRow("Prospecting", prospectingPlan, prospectingDone, DashboardGreen); HorizontalDivider(); ActivitySummaryRow("Follow Ups", followUpsPlan, followUpsDone, DashboardOrange); HorizontalDivider(); ActivitySummaryRow("Appointments", appointmentsPlan, appointmentsDone, DashboardRed); HorizontalDivider(); ActivitySummaryRow("Presentations", presentationsPlan, presentationsDone, DashboardPurple); HorizontalDivider(); Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Column { Text("TOTAL", fontWeight = FontWeight.Bold); Text("Plan $plan  •  Done $done", fontSize = 13.sp, color = Color.Gray) }; Text("$achievement%", fontSize = 22.sp, fontWeight = FontWeight.Black, color = DashboardGreen) }; LinearProgressIndicator(progress = { achievement.coerceIn(0, 100) / 100f }, modifier = Modifier.fillMaxWidth(), color = DashboardGreen) } } }
         if (showZonePerformance) { item { Text("ZONE PERFORMANCE", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen) }; items(zones) { ZonePerformanceCard(it) } }
         item { Text("TOP PERFORMERS", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen) }
@@ -77,6 +94,51 @@ private fun Dashboard(title: String, subtitle: String, staff: List<StaffDaySumma
         item { Text("STAFF STATUS", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen) }
         items(staff.sortedByDescending { it.achievement }) { member -> Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) { Column(Modifier.padding(14.dp)) { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(member.name, fontWeight = FontWeight.Bold); Text("${member.achievement}%", fontWeight = FontWeight.Bold, color = DashboardGreen) }; Text("${member.salesCode} • ${member.zone}", color = Color.Gray, fontSize = 12.sp); Spacer(Modifier.height(5.dp)); Text("Plan ${member.totalPlan}  |  Done ${member.totalDone}"); Text(when { member.dayEnded -> "Day Ended • Locked"; member.dayStarted -> "Day In Progress"; member.present -> "Present • Not Started"; else -> "Absent" }, color = when { member.dayEnded -> DashboardPurple; member.dayStarted -> DashboardBlue; member.present -> DashboardGreen; else -> DashboardRed }, fontWeight = FontWeight.SemiBold) } } }
     }
+}
+
+@Composable
+private fun AttendanceOverviewCard(member: StaffDaySummary) {
+    Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(14.dp)) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(Modifier.weight(1f)) {
+                    Text(member.name, fontWeight = FontWeight.Bold)
+                    Text("${member.salesCode} • ${member.zone}", fontSize = 12.sp, color = Color.Gray)
+                }
+                Text(if (member.present) "PRESENT" else "ABSENT", color = if (member.present) DashboardGreen else DashboardRed, fontWeight = FontWeight.Bold)
+            }
+            HorizontalDivider()
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                AttendanceValue("IN", member.checkInTime ?: "—")
+                AttendanceValue("OUT", member.checkOutTime ?: "—")
+                AttendanceValue("TODAY", workingTimeLabel(member.checkInTime, member.checkOutTime))
+            }
+            Text("Worked Days: ${member.workedDays}", fontWeight = FontWeight.SemiBold, color = DashboardGreen)
+        }
+    }
+}
+
+@Composable
+private fun RowScope.AttendanceValue(label: String, value: String) {
+    Column(Modifier.weight(1f)) {
+        Text(label, fontSize = 10.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+        Text(value.uppercase(), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+private fun workingTimeLabel(checkIn: String?, checkOut: String?): String {
+    if (checkIn.isNullOrBlank()) return "—"
+    if (checkOut.isNullOrBlank()) return "Working"
+    return runCatching {
+        val format = SimpleDateFormat("hh:mm a", Locale.US)
+        val start = format.parse(checkIn.uppercase(Locale.US)) ?: return@runCatching "—"
+        val end = format.parse(checkOut.uppercase(Locale.US)) ?: return@runCatching "—"
+        var minutes = (end.time - start.time) / 60000L
+        if (minutes < 0) minutes += 24 * 60
+        val hours = minutes / 60
+        val mins = minutes % 60
+        if (mins == 0L) "${hours}h" else "${hours}h ${mins}m"
+    }.getOrDefault("—")
 }
 
 @Composable private fun TopPerformerCard(rank: Int, member: StaffDaySummary) {
