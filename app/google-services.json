@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "123563021997",
+    "project_id": "prime-daily-activity",
+    "storage_bucket": "prime-daily-activity.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:123563021997:android:aab28bec007d4685369824",
+        "android_client_info": {
+          "package_name": "lk.prime.dailyactivity"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCMm4qhEc_EMPipKPXMhiM9TUB2JvoafaQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
