@@ -112,7 +112,11 @@ fun PrimeDailyActivityApp() {
                     error = authError
                 )
                 AppScreen.PENDING -> PendingApprovalScreen(onBack = { authError = null; screen = AppScreen.LOGIN })
-                AppScreen.ATTENDANCE -> AttendanceScreen(onContinue = { screen = AppScreen.DAILY })
+                AppScreen.ATTENDANCE -> AttendanceScreen(
+                    salesCode = currentProfile?.salesCode.orEmpty(),
+                    repository = repository,
+                    onContinue = { screen = AppScreen.DAILY }
+                )
                 AppScreen.DAILY -> DailyActivityScreen(currentProfile)
             }
         }
@@ -180,25 +184,18 @@ private fun PrimeHeader() {
 private fun PlanRow(label: String, value: Int, onChange: (Int) -> Unit) = CounterCard(label, "PLAN", value, onChange)
 
 @Composable
-private fun DoneRow(label: String, plan: Int, done: Int, enabled: Boolean, onChange: (Int) -> Unit) {
-    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(label, fontWeight = FontWeight.Bold); Text("Plan: $plan", color = Color.Gray) }
-            IconButton(onClick = { onChange(done - 1) }, enabled = enabled) { Text("−", fontSize = 24.sp) }
-            Text("$done", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            IconButton(onClick = { onChange(done + 1) }, enabled = enabled) { Text("+", fontSize = 24.sp) }
-        }
-    }
-}
+private fun DoneRow(label: String, plan: Int, done: Int, enabled: Boolean, onChange: (Int) -> Unit) = CounterCard(label, "DONE / $plan", done, onChange, enabled)
 
 @Composable
-private fun CounterCard(label: String, caption: String, value: Int, onChange: (Int) -> Unit) {
-    Card(shape = RoundedCornerShape(16.dp), modifier = Modifier.fillMaxWidth()) {
-        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text(label, fontWeight = FontWeight.Bold); Text(caption, color = Color.Gray, fontSize = 12.sp) }
-            IconButton(onClick = { onChange(value - 1) }) { Text("−", fontSize = 24.sp) }
-            Text("$value", fontSize = 22.sp, fontWeight = FontWeight.Bold)
-            IconButton(onClick = { onChange(value + 1) }) { Text("+", fontSize = 24.sp) }
+private fun CounterCard(label: String, sub: String, value: Int, onChange: (Int) -> Unit, enabled: Boolean = true) {
+    Card(modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+        Row(modifier = Modifier.fillMaxWidth().padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+            Column { Text(label, fontWeight = FontWeight.Bold); Text(sub, fontSize = 12.sp, color = Color.Gray) }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                OutlinedButton(onClick = { onChange(value - 1) }, enabled = enabled) { Text("−") }
+                Text("  $value  ", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                OutlinedButton(onClick = { onChange(value + 1) }, enabled = enabled) { Text("+") }
+            }
         }
     }
 }
