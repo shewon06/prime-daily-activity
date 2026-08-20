@@ -5,6 +5,7 @@ interface DataRepository {
     suspend fun getStaffBySalesCode(salesCode: String): Result<StaffProfile?>
     suspend fun getPendingRegistrations(): Result<List<StaffProfile>>
     suspend fun setApproval(salesCode: String, status: ApprovalStatus): Result<Unit>
+    suspend fun updateProfilePhoto(salesCode: String, photoUrl: String): Result<Unit>
     suspend fun saveAttendance(salesCode: String, record: AttendanceRecord): Result<Unit>
     suspend fun getTodayActivity(salesCode: String): Result<DailyActivity?>
     suspend fun saveTodayActivity(salesCode: String, activity: DailyActivity): Result<Unit>
@@ -31,6 +32,10 @@ class InMemoryDataRepository : DataRepository {
     override suspend fun getStaffBySalesCode(salesCode: String) = runCatching { staff[salesCode] }
     override suspend fun getPendingRegistrations() = runCatching { staff.values.filter { it.approvalStatus == ApprovalStatus.PENDING } }
     override suspend fun setApproval(salesCode: String, status: ApprovalStatus) = runCatching { val current = requireNotNull(staff[salesCode]); staff[salesCode] = current.copy(approvalStatus = status) }
+    override suspend fun updateProfilePhoto(salesCode: String, photoUrl: String) = runCatching {
+        val current = requireNotNull(staff[salesCode])
+        staff[salesCode] = current.copy(photoUri = photoUrl)
+    }
     override suspend fun saveAttendance(salesCode: String, record: AttendanceRecord) = runCatching { attendance[salesCode] = record }
     override suspend fun getTodayActivity(salesCode: String) = runCatching { activities[salesCode] }
     override suspend fun saveTodayActivity(salesCode: String, activity: DailyActivity) = runCatching {
