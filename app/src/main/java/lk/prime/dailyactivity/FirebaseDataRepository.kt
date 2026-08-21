@@ -1,6 +1,8 @@
 package lk.prime.dailyactivity
 
+import com.google.firebase.firestore.FieldValue
 import com.google.firebase.firestore.FirebaseFirestore
+import com.google.firebase.firestore.SetOptions
 import kotlinx.coroutines.tasks.await
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -33,7 +35,7 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
         }
         ref.set(
             mapOf("salesCode" to salesCode, "date" to todayKey(), "attendance" to mergedRecord.toMap()),
-            com.google.firebase.firestore.SetOptions.merge()
+            SetOptions.merge()
         ).await()
     }
     override suspend fun getTodayAttendance(salesCode: String): Result<AttendanceRecord?> = runCatching {
@@ -44,8 +46,68 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
     override suspend fun getTodayActivity(salesCode: String): Result<DailyActivity?> = runCatching { val doc = db.collection("dailyRecords").document("${todayKey()}_$salesCode").get().await(); @Suppress("UNCHECKED_CAST") ((doc.get("activity") as? Map<String, Any?>)?.toDailyActivity()) }
     override suspend fun saveTodayActivity(salesCode: String, activity: DailyActivity): Result<Unit> = runCatching {
         val ref = db.collection("dailyRecords").document("${todayKey()}_$salesCode")
-        db.runTransaction { tx -> val old = tx.get(ref); @Suppress("UNCHECKED_CAST") val oldActivity = (old.get("activity") as? Map<String, Any?>)?.toDailyActivity(); if (oldActivity?.dayLocked == true) error("Day is already locked"); if (oldActivity?.planLocked == true) { require(activity.prospectingPlan == oldActivity.prospectingPlan); require(activity.followUpsPlan == oldActivity.followUpsPlan); require(activity.appointmentsPlan == oldActivity.appointmentsPlan); require(activity.presentationsPlan == oldActivity.presentationsPlan) }; tx.set(ref, mapOf("salesCode" to salesCode, "date" to todayKey(), "activity" to activity.toMap()), com.google.firebase.firestore.SetOptions.merge()) }.await()
+        db.runTransaction { tx -> val old = tx.get(ref); @Suppress("UNCHECKED_CAST") val oldActivity = (old.get("activity") as? Map<String, Any?>)?.toDailyActivity(); if (oldActivity?.dayLocked == true) error("Day is already locked"); if (oldActivity?.planLocked == true) { require(activity.prospectingPlan == oldActivity.prospectingPlan); require(activity.followUpsPlan == oldActivity.followUpsPlan); require(activity.appointmentsPlan == oldActivity.appointmentsPlan); require(activity.presentationsPlan == oldActivity.presentationsPlan) }; tx.set(ref, mapOf("salesCode" to salesCode, "date" to todayKey(), "activity" to activity.toMap()), SetOptions.merge()) }.await()
     }
+
+    override suspend fun getMonthlySalesTarget(salesCode: String, monthKey: String, dateKey: String): Result<MonthlySalesTarget> = runCatching {
+        val doc = db.collection("monthlyTargets").document("${monthKey}_$salesCode").get().await()
+        @Suppress("UNCHECKED_CAST")
+        val achievements = doc.get("achievements") as? Map<String, Any?> ?: emptyMap()
+        MonthlySalesTarget(
+            monthKey = monthKey,
+            targetAmount = (doc.get("targetAmount") as? Number)?.toLong() ?: 0L,
+            targetLocked = doc.getBoolean("targetLocked") ?: false,
+            achievedAmount = (doc.get("achievedAmount") as? Number)?.toLong() ?: 0L,
+            todayAchievement = (achievements[dateKey] as? Number)?.toLong() ?: 0L
+        )
+    }
+
+    override suspend fun lockMonthlySalesTarget(salesCode: String, monthKey: String, targetAmount: Long): Result<Unit> = runCatching {
+        require(targetAmount > 0L) { "Enter a valid monthly target." }
+        val ref = db.collection("monthlyTargets").document("${monthKey}_$salesCode")
+        db.runTransaction { tx ->
+            val old = tx.get(ref)
+            require(old.getBoolean("targetLocked") != true) { "This month's target is already locked." }
+            tx.set(
+                ref,
+                mapOf(
+                    "salesCode" to salesCode,
+                    "monthKey" to monthKey,
+                    "targetAmount" to targetAmount,
+                    "targetLocked" to true,
+                    "lockedAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            )
+        }.await()
+    }
+
+    override suspend fun addSalesAchievement(salesCode: String, monthKey: String, dateKey: String, amount: Long): Result<Unit> = runCatching {
+        require(amount > 0L) { "Enter a valid achievement amount." }
+        require(dateKey.startsWith(monthKey)) { "Achievement date must be inside the current month." }
+        val ref = db.collection("monthlyTargets").document("${monthKey}_$salesCode")
+        db.runTransaction { tx ->
+            val old = tx.get(ref)
+            val currentTotal = (old.get("achievedAmount") as? Number)?.toLong() ?: 0L
+            @Suppress("UNCHECKED_CAST")
+            val oldAchievements = old.get("achievements") as? Map<String, Any?> ?: emptyMap()
+            val achievements = oldAchievements.toMutableMap()
+            val todayTotal = (achievements[dateKey] as? Number)?.toLong() ?: 0L
+            achievements[dateKey] = todayTotal + amount
+            tx.set(
+                ref,
+                mapOf(
+                    "salesCode" to salesCode,
+                    "monthKey" to monthKey,
+                    "achievedAmount" to currentTotal + amount,
+                    "achievements" to achievements,
+                    "lastAchievementAt" to FieldValue.serverTimestamp()
+                ),
+                SetOptions.merge()
+            )
+        }.await()
+    }
+
     override suspend fun getZoneSummaries(zone: String) = runCatching { summaries(zone, false) }
     override suspend fun getAllIslandSummaries() = runCatching { summaries(null, true) }
 
