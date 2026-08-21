@@ -7,6 +7,7 @@ interface DataRepository {
     suspend fun setApproval(salesCode: String, status: ApprovalStatus): Result<Unit>
     suspend fun updateProfilePhoto(salesCode: String, photoUrl: String): Result<Unit>
     suspend fun saveAttendance(salesCode: String, record: AttendanceRecord): Result<Unit>
+    suspend fun getTodayAttendance(salesCode: String): Result<AttendanceRecord?>
     suspend fun getTodayActivity(salesCode: String): Result<DailyActivity?>
     suspend fun saveTodayActivity(salesCode: String, activity: DailyActivity): Result<Unit>
     suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>>
@@ -36,7 +37,18 @@ class InMemoryDataRepository : DataRepository {
         val current = requireNotNull(staff[salesCode])
         staff[salesCode] = current.copy(photoUri = photoUrl)
     }
-    override suspend fun saveAttendance(salesCode: String, record: AttendanceRecord) = runCatching { attendance[salesCode] = record }
+    override suspend fun saveAttendance(salesCode: String, record: AttendanceRecord) = runCatching {
+        val existing = attendance[salesCode]
+        attendance[salesCode] = if (existing?.checkedIn == true) {
+            existing.copy(
+                checkedOut = existing.checkedOut || record.checkedOut,
+                checkOutTime = record.checkOutTime ?: existing.checkOutTime
+            )
+        } else {
+            record
+        }
+    }
+    override suspend fun getTodayAttendance(salesCode: String) = runCatching { attendance[salesCode] }
     override suspend fun getTodayActivity(salesCode: String) = runCatching { activities[salesCode] }
     override suspend fun saveTodayActivity(salesCode: String, activity: DailyActivity) = runCatching {
         val old = activities[salesCode]; if (old?.dayLocked == true) error("Day is already locked")
