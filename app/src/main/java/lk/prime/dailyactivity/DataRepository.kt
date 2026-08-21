@@ -13,6 +13,7 @@ interface DataRepository {
     suspend fun getMonthlySalesTarget(salesCode: String, monthKey: String, dateKey: String): Result<MonthlySalesTarget>
     suspend fun lockMonthlySalesTarget(salesCode: String, monthKey: String, targetAmount: Long): Result<Unit>
     suspend fun addSalesAchievement(salesCode: String, monthKey: String, dateKey: String, amount: Long): Result<Unit>
+    suspend fun getMonthlySalesReport(monthKey: String): Result<List<StaffMonthlySalesSummary>>
     suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>>
     suspend fun getAllIslandSummaries(): Result<List<StaffDaySummary>>
     suspend fun getMonthlyAttendance(salesCode: String, monthKey: String): Result<List<AttendanceDayDetail>>
@@ -31,6 +32,24 @@ data class StaffMonthlyAttendanceSummary(
     val zone: String,
     val attendance: List<AttendanceDayDetail>
 )
+
+data class SalesAchievementDay(
+    val date: String,
+    val amount: Long
+)
+
+data class StaffMonthlySalesSummary(
+    val salesCode: String,
+    val fullName: String,
+    val zone: String,
+    val targetAmount: Long,
+    val targetLocked: Boolean,
+    val achievedAmount: Long,
+    val achievements: List<SalesAchievementDay>
+) {
+    val balance: Long get() = (targetAmount - achievedAmount).coerceAtLeast(0L)
+    val achievementPercent: Double get() = if (targetAmount <= 0L) 0.0 else achievedAmount.toDouble() * 100.0 / targetAmount.toDouble()
+}
 
 class InMemoryDataRepository : DataRepository {
     private val staff = linkedMapOf<String, StaffProfile>()
@@ -88,6 +107,27 @@ class InMemoryDataRepository : DataRepository {
         monthlyTargets[key] = current.copy(achievedAmount = current.achievedAmount + amount)
         val dayKey = "${dateKey}_$salesCode"
         dailySalesAchievements[dayKey] = (dailySalesAchievements[dayKey] ?: 0L) + amount
+    }
+    override suspend fun getMonthlySalesReport(monthKey: String) = runCatching {
+        staff.values
+            .filter { it.approvalStatus == ApprovalStatus.APPROVED }
+            .map { person ->
+                val target = monthlyTargets["${monthKey}_${person.salesCode}"] ?: MonthlySalesTarget(monthKey = monthKey)
+                val achievements = dailySalesAchievements.entries
+                    .filter { (key, _) -> key.startsWith(monthKey) && key.endsWith("_${person.salesCode}") }
+                    .map { (key, amount) -> SalesAchievementDay(key.removeSuffix("_${person.salesCode}"), amount) }
+                    .sortedByDescending { it.date }
+                StaffMonthlySalesSummary(
+                    salesCode = person.salesCode,
+                    fullName = person.fullName,
+                    zone = person.zone,
+                    targetAmount = target.targetAmount,
+                    targetLocked = target.targetLocked,
+                    achievedAmount = target.achievedAmount,
+                    achievements = achievements
+                )
+            }
+            .sortedWith(compareBy<StaffMonthlySalesSummary> { it.zone }.thenBy { it.fullName })
     }
     override suspend fun getZoneSummaries(zone: String) = runCatching { summaries().filter { it.zone == zone } }
     override suspend fun getAllIslandSummaries() = runCatching { summaries() }
