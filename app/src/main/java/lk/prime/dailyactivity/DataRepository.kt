@@ -10,6 +10,9 @@ interface DataRepository {
     suspend fun getTodayAttendance(salesCode: String): Result<AttendanceRecord?>
     suspend fun getTodayActivity(salesCode: String): Result<DailyActivity?>
     suspend fun saveTodayActivity(salesCode: String, activity: DailyActivity): Result<Unit>
+    suspend fun getMonthlySalesTarget(salesCode: String, monthKey: String, dateKey: String): Result<MonthlySalesTarget>
+    suspend fun lockMonthlySalesTarget(salesCode: String, monthKey: String, targetAmount: Long): Result<Unit>
+    suspend fun addSalesAchievement(salesCode: String, monthKey: String, dateKey: String, amount: Long): Result<Unit>
     suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>>
     suspend fun getAllIslandSummaries(): Result<List<StaffDaySummary>>
     suspend fun getMonthlyAttendance(salesCode: String, monthKey: String): Result<List<AttendanceDayDetail>>
@@ -25,6 +28,8 @@ class InMemoryDataRepository : DataRepository {
     private val staff = linkedMapOf<String, StaffProfile>()
     private val attendance = linkedMapOf<String, AttendanceRecord>()
     private val activities = linkedMapOf<String, DailyActivity>()
+    private val monthlyTargets = linkedMapOf<String, MonthlySalesTarget>()
+    private val dailySalesAchievements = linkedMapOf<String, Long>()
 
     override suspend fun registerStaff(profile: StaffProfile) = runCatching {
         require(profile.salesCode.isNotBlank()); require(!staff.containsKey(profile.salesCode)) { "Sales Code already registered" }
@@ -54,6 +59,27 @@ class InMemoryDataRepository : DataRepository {
         val old = activities[salesCode]; if (old?.dayLocked == true) error("Day is already locked")
         if (old?.planLocked == true) { require(activity.prospectingPlan == old.prospectingPlan); require(activity.followUpsPlan == old.followUpsPlan); require(activity.appointmentsPlan == old.appointmentsPlan); require(activity.presentationsPlan == old.presentationsPlan) }
         activities[salesCode] = activity
+    }
+    override suspend fun getMonthlySalesTarget(salesCode: String, monthKey: String, dateKey: String) = runCatching {
+        val key = "${monthKey}_$salesCode"
+        (monthlyTargets[key] ?: MonthlySalesTarget(monthKey = monthKey)).copy(
+            todayAchievement = dailySalesAchievements["${dateKey}_$salesCode"] ?: 0L
+        )
+    }
+    override suspend fun lockMonthlySalesTarget(salesCode: String, monthKey: String, targetAmount: Long) = runCatching {
+        require(targetAmount > 0L) { "Enter a valid monthly target." }
+        val key = "${monthKey}_$salesCode"
+        val current = monthlyTargets[key] ?: MonthlySalesTarget(monthKey = monthKey)
+        require(!current.targetLocked) { "This month's target is already locked." }
+        monthlyTargets[key] = current.copy(targetAmount = targetAmount, targetLocked = true)
+    }
+    override suspend fun addSalesAchievement(salesCode: String, monthKey: String, dateKey: String, amount: Long) = runCatching {
+        require(amount > 0L) { "Enter a valid achievement amount." }
+        val key = "${monthKey}_$salesCode"
+        val current = monthlyTargets[key] ?: MonthlySalesTarget(monthKey = monthKey)
+        monthlyTargets[key] = current.copy(achievedAmount = current.achievedAmount + amount)
+        val dayKey = "${dateKey}_$salesCode"
+        dailySalesAchievements[dayKey] = (dailySalesAchievements[dayKey] ?: 0L) + amount
     }
     override suspend fun getZoneSummaries(zone: String) = runCatching { summaries().filter { it.zone == zone } }
     override suspend fun getAllIslandSummaries() = runCatching { summaries() }
