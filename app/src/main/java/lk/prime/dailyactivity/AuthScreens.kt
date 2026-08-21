@@ -1,9 +1,12 @@
 package lk.prime.dailyactivity
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.*
@@ -14,10 +17,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 
 private val LoginDark = Color(0xFF031B12)
 private val LoginCard = Color(0xFF0A2B1D)
@@ -192,6 +197,24 @@ fun RegistrationScreen(
     var mobile by remember { mutableStateOf("") }
     var zone by remember { mutableStateOf("") }
     var pin by remember { mutableStateOf("") }
+    var photoValue by remember { mutableStateOf<String?>(null) }
+    var photoBusy by remember { mutableStateOf(false) }
+    var photoError by remember { mutableStateOf<String?>(null) }
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+
+    val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
+        if (uri != null && !photoBusy) {
+            photoBusy = true
+            photoError = null
+            scope.launch {
+                val result = runCatching { encodeProfilePhoto(context, uri) }
+                photoBusy = false
+                result.onSuccess { photoValue = it }
+                    .onFailure { photoError = it.localizedMessage ?: "Could not prepare profile photo." }
+            }
+        }
+    }
 
     Column(
         modifier = Modifier
@@ -216,16 +239,61 @@ fun RegistrationScreen(
             singleLine = true,
             visualTransformation = PasswordVisualTransformation()
         )
-        Card(shape = RoundedCornerShape(14.dp), modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(16.dp)) {
-                Text("Profile Photo", fontWeight = FontWeight.Bold)
-                Text("You can add or change your staff photo after login.")
+
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth(),
+            colors = CardDefaults.cardColors(containerColor = Color(0xFFF1F4EF))
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(14.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier.size(70.dp).background(PrimeColors.Gold, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    ProfilePhotoImage(photoValue, Modifier.size(62.dp))
+                }
+                Spacer(Modifier.width(12.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("PROFILE PHOTO", color = PrimeColors.Green, fontWeight = FontWeight.Black, fontSize = 12.sp)
+                    Text(
+                        if (isSavedProfilePhoto(photoValue)) "Photo selected" else "Add your staff photo",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 13.sp
+                    )
+                    Text("You can change it later after login.", fontSize = 10.sp, color = Color.Gray)
+                    photoError?.let { Text(it, color = MaterialTheme.colorScheme.error, fontSize = 10.sp) }
+                }
+                TextButton(
+                    onClick = { photoPicker.launch("image/*") },
+                    enabled = !photoBusy && !loading
+                ) {
+                    Text(
+                        if (photoBusy) "LOADING..." else if (isSavedProfilePhoto(photoValue)) "CHANGE" else "ADD",
+                        color = PrimeColors.Gold,
+                        fontWeight = FontWeight.Black
+                    )
+                }
             }
         }
+
         if (error != null) Text(error, color = MaterialTheme.colorScheme.error)
         Button(
-            onClick = { onSubmit(StaffProfile(code, name, mobile, zone), pin) },
-            enabled = !loading && code.isNotBlank() && name.isNotBlank() && mobile.isNotBlank() && zone.isNotBlank() && pin.length >= 6,
+            onClick = {
+                onSubmit(
+                    StaffProfile(
+                        salesCode = code,
+                        fullName = name,
+                        mobile = mobile,
+                        zone = zone,
+                        photoUri = photoValue
+                    ),
+                    pin
+                )
+            },
+            enabled = !loading && !photoBusy && code.isNotBlank() && name.isNotBlank() && mobile.isNotBlank() && zone.isNotBlank() && pin.length >= 6,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(if (loading) "SUBMITTING..." else "SUBMIT FOR APPROVAL")
