@@ -1,3 +1,5 @@
+import java.util.Base64
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -9,6 +11,21 @@ val releaseStoreFile = System.getenv("RELEASE_STORE_FILE")
 val releaseStorePassword = System.getenv("RELEASE_STORE_PASSWORD")
 val releaseKeyAlias = System.getenv("RELEASE_KEY_ALIAS")
 val releaseKeyPassword = System.getenv("RELEASE_KEY_PASSWORD")
+
+val generateLauncherLogo by tasks.registering {
+    val sourceFile = layout.projectDirectory.file("src/main/res/raw/prime_logo.b64")
+    val outputFile = layout.buildDirectory.file("generated/launcherIcon/res/drawable-nodpi/prime_launcher_logo.webp")
+
+    inputs.file(sourceFile)
+    outputs.file(outputFile)
+
+    doLast {
+        val target = outputFile.get().asFile
+        target.parentFile.mkdirs()
+        val encoded = sourceFile.asFile.readText().trim()
+        target.writeBytes(Base64.getDecoder().decode(encoded))
+    }
+}
 
 android {
     namespace = "lk.prime.dailyactivity"
@@ -45,6 +62,8 @@ android {
         }
     }
 
+    sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/launcherIcon/res"))
+
     buildFeatures { compose = true }
 
     compileOptions {
@@ -57,6 +76,10 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+}
+
+tasks.matching { it.name == "preBuild" }.configureEach {
+    dependsOn(generateLauncherLogo)
 }
 
 dependencies {
