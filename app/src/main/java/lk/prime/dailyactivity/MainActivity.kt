@@ -1,5 +1,6 @@
 package lk.prime.dailyactivity
 
+import android.app.Activity
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -14,6 +15,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -388,6 +390,8 @@ private fun DailyPerformanceScreen(
     val pct = if (totalPlan == 0) 0 else totalDone * 100 / totalPlan
     val date = remember { SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date()) }
     val displayName = profile?.fullName?.ifBlank { "PRIME Staff" } ?: "PRIME Staff"
+    val hostActivity = LocalContext.current as? Activity
+    var showEndDayConfirmation by remember { mutableStateOf(false) }
 
     Column(
         modifier = Modifier
@@ -483,7 +487,41 @@ private fun DailyPerformanceScreen(
         error?.let { Text(it, color = Color(0xFFFF7777), fontSize = 12.sp) }
 
         Button(
-            onClick = onEndDay,
+            onClick = { hostActivity?.finishAndRemoveTask() },
+            enabled = !saving,
+            modifier = Modifier.fillMaxWidth().height(56.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(
+                containerColor = Color(0xFF18452E),
+                contentColor = Color.White,
+                disabledContainerColor = Color(0xFF102D20),
+                disabledContentColor = Color.White.copy(alpha = 0.45f)
+            )
+        ) {
+            Text(
+                if (saving) "SAVING…" else "CLOSE APP FOR NOW",
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+
+        Text(
+            "Your saved activity stays recorded. Reopen the app when you need to update more work.",
+            color = Color.White.copy(alpha = 0.58f),
+            fontSize = 10.sp
+        )
+
+        Spacer(Modifier.height(14.dp))
+        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))
+        Text(
+            "FINISH WORKDAY",
+            color = PrimeGold,
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Black
+        )
+
+        Button(
+            onClick = { showEndDayConfirmation = true },
             enabled = !dayEnded && !saving,
             modifier = Modifier.fillMaxWidth().height(62.dp),
             shape = RoundedCornerShape(12.dp),
@@ -507,10 +545,43 @@ private fun DailyPerformanceScreen(
 
         Text(
             if (dayEnded) "Your workday is closed. Today's activity is locked."
-            else "Update DONE counts as you complete activities. End your day when work is finished.",
+            else "Only use END MY DAY when your full workday is finished. This will lock today's activity and check you out.",
             color = Color.White.copy(alpha = 0.58f),
             fontSize = 10.sp,
             modifier = Modifier.padding(bottom = 12.dp)
+        )
+    }
+
+    if (showEndDayConfirmation) {
+        AlertDialog(
+            onDismissRequest = { showEndDayConfirmation = false },
+            title = {
+                Text("END YOUR WORKDAY?", fontWeight = FontWeight.Black, color = PrimeGreen)
+            },
+            text = {
+                Text(
+                    "This will lock today's activity and check you out. You will not be able to change DONE counts after ending the day."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        showEndDayConfirmation = false
+                        onEndDay()
+                    },
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = PrimeGold,
+                        contentColor = PrimeDark
+                    )
+                ) {
+                    Text("YES, END MY DAY", fontWeight = FontWeight.Black)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showEndDayConfirmation = false }) {
+                    Text("CANCEL", color = PrimeGreen, fontWeight = FontWeight.Bold)
+                }
+            }
         )
     }
 }
