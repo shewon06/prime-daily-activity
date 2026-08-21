@@ -121,6 +121,35 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
         }.sortedByDescending { it.date }
     }
 
+    override suspend fun getMonthlyAttendanceReport(monthKey: String): Result<List<StaffMonthlyAttendanceSummary>> = runCatching {
+        val people = db.collection("staff")
+            .whereEqualTo("approvalStatus", ApprovalStatus.APPROVED.name)
+            .get().await().documents.mapNotNull { it.toStaffProfile() }
+
+        val rowsByStaff = db.collection("dailyRecords").get().await().documents.mapNotNull { doc ->
+            val date = doc.getString("date") ?: return@mapNotNull null
+            if (!date.startsWith(monthKey)) return@mapNotNull null
+            val code = doc.getString("salesCode") ?: return@mapNotNull null
+            @Suppress("UNCHECKED_CAST")
+            val att = doc.get("attendance") as? Map<String, Any?> ?: return@mapNotNull null
+            if (att["checkedIn"] as? Boolean != true) return@mapNotNull null
+            code to AttendanceDayDetail(
+                date = date,
+                checkInTime = att["checkInTime"] as? String,
+                checkOutTime = att["checkOutTime"] as? String
+            )
+        }.groupBy({ it.first }, { it.second })
+
+        people.map { person ->
+            StaffMonthlyAttendanceSummary(
+                salesCode = person.salesCode,
+                fullName = person.fullName,
+                zone = person.zone,
+                attendance = rowsByStaff[person.salesCode].orEmpty().sortedByDescending { it.date }
+            )
+        }.sortedWith(compareBy<StaffMonthlyAttendanceSummary> { it.zone }.thenBy { it.fullName })
+    }
+
     private suspend fun summaries(zone: String?, includeHistory: Boolean): List<StaffDaySummary> {
         val staffQuery = if (zone == null) db.collection("staff").whereEqualTo("approvalStatus", ApprovalStatus.APPROVED.name) else db.collection("staff").whereEqualTo("approvalStatus", ApprovalStatus.APPROVED.name).whereEqualTo("zone", zone)
         val people = staffQuery.get().await().documents.mapNotNull { it.toStaffProfile() }
