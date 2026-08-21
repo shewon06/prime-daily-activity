@@ -12,8 +12,11 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -52,11 +55,22 @@ fun isSavedProfilePhoto(value: String?): Boolean =
     !value.isNullOrBlank() && value.startsWith("data:image")
 
 @Composable
-fun ProfilePhotoImage(photoValue: String?, modifier: Modifier = Modifier) {
+fun ProfilePhotoImage(
+    photoValue: String?,
+    modifier: Modifier = Modifier,
+    fallbackText: String = "👤",
+    fallbackColor: Color = Color.Unspecified,
+    fallbackFontSize: TextUnit = 28.sp
+) {
     val safePhoto = photoValue?.takeIf(::isSavedProfilePhoto)
     if (safePhoto == null) {
         Box(modifier = modifier.clip(CircleShape), contentAlignment = Alignment.Center) {
-            Text("👤", fontSize = 28.sp)
+            Text(
+                fallbackText,
+                color = fallbackColor,
+                fontSize = fallbackFontSize,
+                fontWeight = FontWeight.Black
+            )
         }
         return
     }
@@ -78,7 +92,12 @@ fun ProfilePhotoImage(photoValue: String?, modifier: Modifier = Modifier) {
         )
     } else {
         Box(modifier = modifier.clip(CircleShape), contentAlignment = Alignment.Center) {
-            Text("👤", fontSize = 28.sp)
+            Text(
+                fallbackText,
+                color = fallbackColor,
+                fontSize = fallbackFontSize,
+                fontWeight = FontWeight.Black
+            )
         }
     }
 }
