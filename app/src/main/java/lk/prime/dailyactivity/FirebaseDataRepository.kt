@@ -17,9 +17,28 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
         db.collection("staff").document(salesCode).update("photoUri", photoUrl).await()
     }
     override suspend fun saveAttendance(salesCode: String, record: AttendanceRecord): Result<Unit> = runCatching {
-        val ref = db.collection("dailyRecords").document("${todayKey()}_$salesCode"); val existing = ref.get().await(); @Suppress("UNCHECKED_CAST") val existingAttendance = existing.get("attendance") as? Map<String, Any?>
-        val mergedRecord = record.copy(checkInTime = record.checkInTime ?: existingAttendance?.get("checkInTime") as? String)
-        ref.set(mapOf("salesCode" to salesCode, "date" to todayKey(), "attendance" to mergedRecord.toMap()), com.google.firebase.firestore.SetOptions.merge()).await()
+        val ref = db.collection("dailyRecords").document("${todayKey()}_$salesCode")
+        val existing = ref.get().await()
+        @Suppress("UNCHECKED_CAST")
+        val existingAttendance = existing.get("attendance") as? Map<String, Any?>
+        val existingRecord = existingAttendance?.toAttendanceRecord()
+        val mergedRecord = if (existingRecord?.checkedIn == true) {
+            existingRecord.copy(
+                checkedOut = existingRecord.checkedOut || record.checkedOut,
+                checkOutTime = record.checkOutTime ?: existingRecord.checkOutTime
+            )
+        } else {
+            record
+        }
+        ref.set(
+            mapOf("salesCode" to salesCode, "date" to todayKey(), "attendance" to mergedRecord.toMap()),
+            com.google.firebase.firestore.SetOptions.merge()
+        ).await()
+    }
+    override suspend fun getTodayAttendance(salesCode: String): Result<AttendanceRecord?> = runCatching {
+        val doc = db.collection("dailyRecords").document("${todayKey()}_$salesCode").get().await()
+        @Suppress("UNCHECKED_CAST")
+        (doc.get("attendance") as? Map<String, Any?>)?.toAttendanceRecord()
     }
     override suspend fun getTodayActivity(salesCode: String): Result<DailyActivity?> = runCatching { val doc = db.collection("dailyRecords").document("${todayKey()}_$salesCode").get().await(); @Suppress("UNCHECKED_CAST") ((doc.get("activity") as? Map<String, Any?>)?.toDailyActivity()) }
     override suspend fun saveTodayActivity(salesCode: String, activity: DailyActivity): Result<Unit> = runCatching {
@@ -51,6 +70,12 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
 
 private fun StaffProfile.toMap() = mapOf("salesCode" to salesCode,"fullName" to fullName,"mobile" to mobile,"zone" to zone,"role" to role.name,"photoUri" to photoUri,"approvalStatus" to approvalStatus.name)
 private fun AttendanceRecord.toMap() = mapOf("checkedIn" to checkedIn,"checkedOut" to checkedOut,"checkInTime" to checkInTime,"checkOutTime" to checkOutTime)
+private fun Map<String, Any?>.toAttendanceRecord() = AttendanceRecord(
+    checkedIn = get("checkedIn") as? Boolean ?: false,
+    checkedOut = get("checkedOut") as? Boolean ?: false,
+    checkInTime = get("checkInTime") as? String,
+    checkOutTime = get("checkOutTime") as? String
+)
 private fun DailyActivity.toMap() = mapOf("prospectingPlan" to prospectingPlan,"followUpsPlan" to followUpsPlan,"appointmentsPlan" to appointmentsPlan,"presentationsPlan" to presentationsPlan,"prospectingDone" to prospectingDone,"followUpsDone" to followUpsDone,"appointmentsDone" to appointmentsDone,"presentationsDone" to presentationsDone,"planLocked" to planLocked,"dayLocked" to dayLocked)
 private fun com.google.firebase.firestore.DocumentSnapshot.toStaffProfile(): StaffProfile? { if (!exists()) return null; return StaffProfile(getString("salesCode") ?: id,getString("fullName") ?: "",getString("mobile") ?: "",getString("zone") ?: "",runCatching { UserRole.valueOf(getString("role") ?: UserRole.STAFF.name) }.getOrDefault(UserRole.STAFF),getString("photoUri"),runCatching { ApprovalStatus.valueOf(getString("approvalStatus") ?: ApprovalStatus.PENDING.name) }.getOrDefault(ApprovalStatus.PENDING)) }
 private fun Map<String, Any?>.toDailyActivity() = DailyActivity((get("prospectingPlan") as? Number)?.toInt() ?: 0,(get("followUpsPlan") as? Number)?.toInt() ?: 0,(get("appointmentsPlan") as? Number)?.toInt() ?: 0,(get("presentationsPlan") as? Number)?.toInt() ?: 0,(get("prospectingDone") as? Number)?.toInt() ?: 0,(get("followUpsDone") as? Number)?.toInt() ?: 0,(get("appointmentsDone") as? Number)?.toInt() ?: 0,(get("presentationsDone") as? Number)?.toInt() ?: 0,get("planLocked") as? Boolean ?: false,get("dayLocked") as? Boolean ?: false)
