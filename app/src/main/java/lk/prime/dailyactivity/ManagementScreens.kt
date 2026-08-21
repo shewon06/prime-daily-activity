@@ -92,17 +92,20 @@ fun ManagementDashboardScreen(profile: StaffProfile, repository: DataRepository)
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var attendanceOpen by remember { mutableStateOf(false) }
+    var salesReportOpen by remember { mutableStateOf(false) }
     var historyMember by remember { mutableStateOf<StaffDaySummary?>(null) }
     var historyMonth by remember { mutableStateOf(currentMonthKey()) }
 
     suspend fun load() {
         loading = true
-        val r = if (profile.role == UserRole.ZONAL_MANAGER) {
+        error = null
+        val result = if (profile.role == UserRole.ZONAL_MANAGER) {
             repository.getZoneSummaries(profile.zone)
         } else {
             repository.getAllIslandSummaries()
         }
-        r.onSuccess { staff = it }.onFailure { error = it.localizedMessage }
+        result.onSuccess { staff = it }
+            .onFailure { error = it.localizedMessage ?: "Could not load management data." }
         loading = false
     }
 
@@ -111,6 +114,13 @@ fun ManagementDashboardScreen(profile: StaffProfile, repository: DataRepository)
     if (historyMember != null && profile.role == UserRole.ADMIN) {
         MonthlyAttendanceScreen(historyMember!!, repository, historyMonth) {
             historyMember = null
+        }
+        return
+    }
+
+    if (salesReportOpen && profile.role == UserRole.ADMIN) {
+        MonthlySalesReportScreen(repository = repository) {
+            salesReportOpen = false
         }
         return
     }
@@ -135,8 +145,11 @@ fun ManagementDashboardScreen(profile: StaffProfile, repository: DataRepository)
                 Text("Management Dashboard", color = Color.White)
             }
         }
+
         if (loading) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator(color = DashboardGreen)
+            }
         } else {
             Dashboard(
                 title = if (profile.role == UserRole.ZONAL_MANAGER) profile.zone else "All Island",
@@ -144,8 +157,9 @@ fun ManagementDashboardScreen(profile: StaffProfile, repository: DataRepository)
                 staff = staff,
                 error = error,
                 showZonePerformance = profile.role != UserRole.ZONAL_MANAGER,
-                showAttendanceButton = profile.role == UserRole.ADMIN,
-                onAttendance = { attendanceOpen = true }
+                showAdminReports = profile.role == UserRole.ADMIN,
+                onAttendance = { attendanceOpen = true },
+                onSalesReport = { salesReportOpen = true }
             )
         }
     }
@@ -158,15 +172,22 @@ private fun Dashboard(
     staff: List<StaffDaySummary>,
     error: String? = null,
     showZonePerformance: Boolean = true,
-    showAttendanceButton: Boolean = false,
-    onAttendance: () -> Unit = {}
+    showAdminReports: Boolean = false,
+    onAttendance: () -> Unit = {},
+    onSalesReport: () -> Unit = {}
 ) {
     val present = staff.count { it.present }
     val plan = staff.sumOf { it.totalPlan }
     val done = staff.sumOf { it.totalDone }
     val ach = if (plan == 0) 0 else done * 100 / plan
-    val zones = staff.groupBy { it.zone.ifBlank { "Unassigned" } }.map { (z, m) ->
-        ZoneDaySummary(z, m.size, m.count { it.present }, m.sumOf { it.totalPlan }, m.sumOf { it.totalDone })
+    val zones = staff.groupBy { it.zone.ifBlank { "Unassigned" } }.map { (z, members) ->
+        ZoneDaySummary(
+            z,
+            members.size,
+            members.count { it.present },
+            members.sumOf { it.totalPlan },
+            members.sumOf { it.totalDone }
+        )
     }.sortedByDescending { it.achievement }
     val top = staff.filter { it.totalPlan > 0 }
         .sortedWith(compareByDescending<StaffDaySummary> { it.achievement }.thenByDescending { it.totalDone })
@@ -181,6 +202,7 @@ private fun Dashboard(
             Text(subtitle, color = Color.Gray)
             error?.let { Text(it, color = DashboardRed) }
         }
+
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SummaryCard("TOTAL STAFF", staff.size, DashboardGreen, Modifier.weight(1f))
@@ -196,29 +218,27 @@ private fun Dashboard(
         item {
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 SummaryCard("DAY ENDED", staff.count { it.dayEnded }, DashboardPurple, Modifier.weight(1f))
-                SummaryCard("ACHIEVEMENT", ach, DashboardGold, Modifier.weight(1f), "%")
+                SummaryCard("ACTIVITY", ach, DashboardGold, Modifier.weight(1f), "%")
             }
         }
-        if (showAttendanceButton) {
+
+        if (showAdminReports) {
             item {
-                Card(
-                    Modifier.fillMaxWidth().clickable { onAttendance() },
-                    shape = RoundedCornerShape(16.dp)
-                ) {
-                    Row(
-                        Modifier.fillMaxWidth().padding(18.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("ATTENDANCE REPORT", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen)
-                            Text("Today & monthly staff attendance", fontSize = 12.sp, color = Color.Gray)
-                        }
-                        Text("VIEW  ›", fontWeight = FontWeight.Bold, color = DashboardGold)
-                    }
-                }
+                ReportCard(
+                    title = "ATTENDANCE REPORT",
+                    subtitle = "Today & monthly staff attendance",
+                    onClick = onAttendance
+                )
+            }
+            item {
+                ReportCard(
+                    title = "MONTHLY SALES REPORT",
+                    subtitle = "Target • Achieved • Balance • Achievement %",
+                    onClick = onSalesReport
+                )
             }
         }
+
         item {
             Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -232,37 +252,59 @@ private fun Dashboard(
                 }
             }
         }
+
         if (showZonePerformance) {
             item { Text("ZONE PERFORMANCE", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen) }
-            items(zones) { z ->
+            items(zones) { zone ->
                 Card(Modifier.fillMaxWidth()) {
                     Column(Modifier.padding(14.dp)) {
-                        Text(z.zone.uppercase(), fontWeight = FontWeight.Bold, color = DashboardGreen)
-                        Text("Staff ${z.staff} • Present ${z.present} • Absent ${z.staff - z.present}")
-                        Text("Plan ${z.plan} • Done ${z.done} • ${z.achievement}%")
+                        Text(zone.zone.uppercase(), fontWeight = FontWeight.Bold, color = DashboardGreen)
+                        Text("Staff ${zone.staff} • Present ${zone.present} • Absent ${zone.staff - zone.present}")
+                        Text("Plan ${zone.plan} • Done ${zone.done} • ${zone.achievement}%")
                     }
                 }
             }
         }
+
         item { Text("TOP PERFORMERS", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen) }
-        items(top.size) { i ->
-            val m = top[i]
+        items(top) { member ->
             Card(Modifier.fillMaxWidth()) {
                 Row(Modifier.padding(14.dp).fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Text("#${i + 1}  ${m.name}", fontWeight = FontWeight.Bold)
-                    Text("${m.achievement}%", color = DashboardGreen, fontWeight = FontWeight.Bold)
+                    Text(member.name, fontWeight = FontWeight.Bold)
+                    Text("${member.achievement}%", color = DashboardGreen, fontWeight = FontWeight.Bold)
                 }
             }
         }
+
         item { Text("STAFF STATUS", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen) }
-        items(staff) { m ->
+        items(staff) { member ->
             Card(Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(14.dp)) {
-                    Text(m.name, fontWeight = FontWeight.Bold)
-                    Text("${m.salesCode} • ${m.zone}", color = Color.Gray)
-                    Text("Plan ${m.totalPlan} | Done ${m.totalDone}")
+                    Text(member.name, fontWeight = FontWeight.Bold)
+                    Text("${member.salesCode} • ${member.zone}", color = Color.Gray)
+                    Text("Plan ${member.totalPlan} | Done ${member.totalDone}")
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun ReportCard(title: String, subtitle: String, onClick: () -> Unit) {
+    Card(
+        Modifier.fillMaxWidth().clickable { onClick() },
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Row(
+            Modifier.fillMaxWidth().padding(18.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(Modifier.weight(1f)) {
+                Text(title, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = DashboardGreen)
+                Text(subtitle, fontSize = 12.sp, color = Color.Gray)
+            }
+            Text("VIEW  ›", fontWeight = FontWeight.Bold, color = DashboardGold)
         }
     }
 }
@@ -391,8 +433,8 @@ private fun TodayAttendanceReport(
                 SummaryCard("ABSENT", staff.size - present, DashboardRed, Modifier.weight(1f))
             }
         }
-        items(staff.sortedWith(compareByDescending<StaffDaySummary> { it.present }.thenBy { it.name })) { m ->
-            AttendanceOverviewCard(m) { onMember(m, month) }
+        items(staff.sortedWith(compareByDescending<StaffDaySummary> { it.present }.thenBy { it.name })) { member ->
+            AttendanceOverviewCard(member) { onMember(member, month) }
         }
         item { Spacer(Modifier.height(8.dp)) }
     }
@@ -450,10 +492,9 @@ private fun MonthlyAttendanceReport(
                         Text(minutesLabel(total), fontWeight = FontWeight.Bold, color = DashboardGreen)
                     }
                     if (row.attendance.isNotEmpty()) {
-                        val avg = total / row.attendance.size
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                             Text("Average / Day", color = Color.Gray)
-                            Text(minutesLabel(avg), fontWeight = FontWeight.SemiBold)
+                            Text(minutesLabel(total / row.attendance.size), fontWeight = FontWeight.SemiBold)
                         }
                     }
                     Text("Tap for daily attendance history ›", fontSize = 11.sp, color = Color.Gray)
@@ -550,18 +591,18 @@ private fun MonthlyAttendanceScreen(
                         }
                     }
                 }
-                items(rows) { r ->
+                items(rows) { row ->
                     Card(Modifier.fillMaxWidth()) {
                         Row(
                             Modifier.padding(14.dp).fillMaxWidth(),
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
                             Column {
-                                Text(formatAttendanceDate(r.date), fontWeight = FontWeight.Bold)
-                                Text("In ${r.checkInTime ?: "—"}  •  Out ${r.checkOutTime ?: "—"}", fontSize = 12.sp, color = Color.Gray)
+                                Text(formatAttendanceDate(row.date), fontWeight = FontWeight.Bold)
+                                Text("In ${row.checkInTime ?: "—"}  •  Out ${row.checkOutTime ?: "—"}", fontSize = 12.sp, color = Color.Gray)
                             }
                             Text(
-                                if (r.checkOutTime.isNullOrBlank()) "Working" else minutesLabel(workingMinutes(r.checkInTime, r.checkOutTime)),
+                                if (row.checkOutTime.isNullOrBlank()) "Working" else minutesLabel(workingMinutes(row.checkInTime, row.checkOutTime)),
                                 fontWeight = FontWeight.Bold,
                                 color = DashboardGreen
                             )
@@ -608,16 +649,16 @@ private fun formatAttendanceDate(date: String): String = runCatching {
 private fun workingMinutes(a: String?, b: String?): Long {
     if (a.isNullOrBlank() || b.isNullOrBlank()) return 0
     return runCatching {
-        val f = SimpleDateFormat("hh:mm a", Locale.US)
-        val s = f.parse(a.uppercase())!!
-        val e = f.parse(b.uppercase())!!
-        var x = (e.time - s.time) / 60000
-        if (x < 0) x += 1440
-        x
+        val format = SimpleDateFormat("hh:mm a", Locale.US)
+        val start = format.parse(a.uppercase())!!
+        val end = format.parse(b.uppercase())!!
+        var minutes = (end.time - start.time) / 60000
+        if (minutes < 0) minutes += 1440
+        minutes
     }.getOrDefault(0)
 }
 
-private fun minutesLabel(x: Long): String = "${x / 60}h ${x % 60}m"
+private fun minutesLabel(value: Long): String = "${value / 60}h ${value % 60}m"
 
 private fun workingTimeLabel(a: String?, b: String?): String = when {
     a.isNullOrBlank() -> "—"
@@ -626,29 +667,29 @@ private fun workingTimeLabel(a: String?, b: String?): String = when {
 }
 
 @Composable
-private fun ActivitySummaryRow(l: String, p: Int, d: Int, c: Color) {
-    val a = if (p == 0) 0 else d * 100 / p
+private fun ActivitySummaryRow(label: String, plan: Int, done: Int, color: Color) {
+    val achievement = if (plan == 0) 0 else done * 100 / plan
     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
         Column {
-            Text(l, fontWeight = FontWeight.SemiBold)
-            Text("Plan $p • Done $d", fontSize = 13.sp, color = Color.Gray)
+            Text(label, fontWeight = FontWeight.SemiBold)
+            Text("Plan $plan • Done $done", fontSize = 13.sp, color = Color.Gray)
         }
-        Text("$a%", fontWeight = FontWeight.Bold, color = c)
+        Text("$achievement%", fontWeight = FontWeight.Bold, color = color)
     }
 }
 
 @Composable
 private fun SummaryCard(
-    l: String,
-    v: Int,
-    c: Color,
+    label: String,
+    value: Int,
+    color: Color,
     modifier: Modifier = Modifier,
     suffix: String = ""
 ) {
     Card(modifier, shape = RoundedCornerShape(16.dp)) {
         Column(Modifier.padding(15.dp)) {
-            Text(l, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-            Text("$v$suffix", fontSize = 28.sp, fontWeight = FontWeight.Black, color = c)
+            Text(label, fontSize = 11.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+            Text("$value$suffix", fontSize = 28.sp, fontWeight = FontWeight.Black, color = color)
         }
     }
 }
