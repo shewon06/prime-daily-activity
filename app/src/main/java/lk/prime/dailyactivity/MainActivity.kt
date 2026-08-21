@@ -155,7 +155,15 @@ fun PrimeDailyActivityApp() {
                 AppScreen.ATTENDANCE -> AttendanceScreen(
                     salesCode = currentProfile?.salesCode.orEmpty(),
                     repository = repository,
-                    onContinue = { screen = AppScreen.DAILY }
+                    onContinue = {
+                        scope.launch {
+                            val code = currentProfile?.salesCode.orEmpty()
+                            if (code.isNotBlank()) {
+                                currentProfile = repository.getStaffBySalesCode(code).getOrNull() ?: currentProfile
+                            }
+                            screen = AppScreen.DAILY
+                        }
+                    }
                 )
 
                 AppScreen.DAILY -> DailyActivityScreen(currentProfile, repository)
@@ -553,12 +561,13 @@ private fun MyDayPlanScreen(
                     modifier = Modifier.size(58.dp).background(PrimeGold, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Box(
+                    ProfilePhotoImage(
+                        photoValue = profile?.photoUri,
                         modifier = Modifier.size(50.dp).background(Color(0xFFECECEC), CircleShape),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Text(initial, color = PrimeGreen, fontSize = 25.sp, fontWeight = FontWeight.Black)
-                    }
+                        fallbackText = initial,
+                        fallbackColor = PrimeGreen,
+                        fallbackFontSize = 25.sp
+                    )
                 }
                 Spacer(Modifier.width(12.dp))
                 Column(Modifier.weight(1f)) {
