@@ -14,6 +14,7 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
     override suspend fun getPendingRegistrations(): Result<List<StaffProfile>> = runCatching { db.collection("staff").whereEqualTo("approvalStatus", ApprovalStatus.PENDING.name).get().await().documents.mapNotNull { it.toStaffProfile() } }
     override suspend fun setApproval(salesCode: String, status: ApprovalStatus): Result<Unit> = runCatching { db.collection("staff").document(salesCode).update("approvalStatus", status.name).await() }
     override suspend fun updateProfilePhoto(salesCode: String, photoUrl: String): Result<Unit> = runCatching {
+        require(isSavedProfilePhoto(photoUrl)) { "Invalid profile photo format." }
         db.collection("staff").document(salesCode).update("photoUri", photoUrl).await()
     }
     override suspend fun saveAttendance(salesCode: String, record: AttendanceRecord): Result<Unit> = runCatching {
@@ -77,5 +78,17 @@ private fun Map<String, Any?>.toAttendanceRecord() = AttendanceRecord(
     checkOutTime = get("checkOutTime") as? String
 )
 private fun DailyActivity.toMap() = mapOf("prospectingPlan" to prospectingPlan,"followUpsPlan" to followUpsPlan,"appointmentsPlan" to appointmentsPlan,"presentationsPlan" to presentationsPlan,"prospectingDone" to prospectingDone,"followUpsDone" to followUpsDone,"appointmentsDone" to appointmentsDone,"presentationsDone" to presentationsDone,"planLocked" to planLocked,"dayLocked" to dayLocked)
-private fun com.google.firebase.firestore.DocumentSnapshot.toStaffProfile(): StaffProfile? { if (!exists()) return null; return StaffProfile(getString("salesCode") ?: id,getString("fullName") ?: "",getString("mobile") ?: "",getString("zone") ?: "",runCatching { UserRole.valueOf(getString("role") ?: UserRole.STAFF.name) }.getOrDefault(UserRole.STAFF),getString("photoUri"),runCatching { ApprovalStatus.valueOf(getString("approvalStatus") ?: ApprovalStatus.PENDING.name) }.getOrDefault(ApprovalStatus.PENDING)) }
+private fun com.google.firebase.firestore.DocumentSnapshot.toStaffProfile(): StaffProfile? {
+    if (!exists()) return null
+    val storedPhoto = getString("photoUri")?.takeIf(::isSavedProfilePhoto)
+    return StaffProfile(
+        getString("salesCode") ?: id,
+        getString("fullName") ?: "",
+        getString("mobile") ?: "",
+        getString("zone") ?: "",
+        runCatching { UserRole.valueOf(getString("role") ?: UserRole.STAFF.name) }.getOrDefault(UserRole.STAFF),
+        storedPhoto,
+        runCatching { ApprovalStatus.valueOf(getString("approvalStatus") ?: ApprovalStatus.PENDING.name) }.getOrDefault(ApprovalStatus.PENDING)
+    )
+}
 private fun Map<String, Any?>.toDailyActivity() = DailyActivity((get("prospectingPlan") as? Number)?.toInt() ?: 0,(get("followUpsPlan") as? Number)?.toInt() ?: 0,(get("appointmentsPlan") as? Number)?.toInt() ?: 0,(get("presentationsPlan") as? Number)?.toInt() ?: 0,(get("prospectingDone") as? Number)?.toInt() ?: 0,(get("followUpsDone") as? Number)?.toInt() ?: 0,(get("appointmentsDone") as? Number)?.toInt() ?: 0,(get("presentationsDone") as? Number)?.toInt() ?: 0,get("planLocked") as? Boolean ?: false,get("dayLocked") as? Boolean ?: false)
