@@ -186,7 +186,7 @@ fun LoginScreen(
 
             Spacer(Modifier.height(6.dp))
             Text(
-                "PRIME Daily Activity • v1.0.0",
+                "PRIME Daily Activity • v1.0.1",
                 color = Color.White.copy(alpha = 0.70f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Bold,
