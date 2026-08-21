@@ -16,12 +16,20 @@ interface DataRepository {
     suspend fun getZoneSummaries(zone: String): Result<List<StaffDaySummary>>
     suspend fun getAllIslandSummaries(): Result<List<StaffDaySummary>>
     suspend fun getMonthlyAttendance(salesCode: String, monthKey: String): Result<List<AttendanceDayDetail>>
+    suspend fun getMonthlyAttendanceReport(monthKey: String): Result<List<StaffMonthlyAttendanceSummary>>
 }
 
 data class AttendanceDayDetail(
     val date: String,
     val checkInTime: String?,
     val checkOutTime: String?
+)
+
+data class StaffMonthlyAttendanceSummary(
+    val salesCode: String,
+    val fullName: String,
+    val zone: String,
+    val attendance: List<AttendanceDayDetail>
 )
 
 class InMemoryDataRepository : DataRepository {
@@ -85,6 +93,17 @@ class InMemoryDataRepository : DataRepository {
     override suspend fun getAllIslandSummaries() = runCatching { summaries() }
     override suspend fun getMonthlyAttendance(salesCode: String, monthKey: String) = runCatching {
         attendance[salesCode]?.takeIf { it.checkedIn }?.let { listOf(AttendanceDayDetail("Today", it.checkInTime, it.checkOutTime)) } ?: emptyList()
+    }
+    override suspend fun getMonthlyAttendanceReport(monthKey: String) = runCatching {
+        staff.values
+            .filter { it.approvalStatus == ApprovalStatus.APPROVED }
+            .map { person ->
+                val rows = attendance[person.salesCode]
+                    ?.takeIf { it.checkedIn }
+                    ?.let { listOf(AttendanceDayDetail("Today", it.checkInTime, it.checkOutTime)) }
+                    ?: emptyList()
+                StaffMonthlyAttendanceSummary(person.salesCode, person.fullName, person.zone, rows)
+            }
     }
 
     private fun summaries(): List<StaffDaySummary> = staff.values.filter { it.approvalStatus == ApprovalStatus.APPROVED }.map { person ->
