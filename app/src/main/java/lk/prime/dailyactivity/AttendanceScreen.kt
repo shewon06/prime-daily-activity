@@ -112,6 +112,7 @@ fun AttendanceScreen(
     onContinue: () -> Unit
 ) {
     var record by remember { mutableStateOf(AttendanceRecord()) }
+    var attendanceLoaded by remember { mutableStateOf(false) }
     var saving by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     var photoValue by remember { mutableStateOf<String?>(null) }
@@ -124,11 +125,18 @@ fun AttendanceScreen(
     val day = remember { SimpleDateFormat("EEEE", Locale.US).format(Date()) }
 
     LaunchedEffect(salesCode) {
+        attendanceLoaded = false
         if (salesCode.isNotBlank()) {
             repository.getStaffBySalesCode(salesCode).getOrNull()?.let {
                 photoValue = it.photoUri
             }
+            val attendanceResult = repository.getTodayAttendance(salesCode)
+            attendanceResult.getOrNull()?.let { record = it }
+            attendanceResult.exceptionOrNull()?.let {
+                error = it.localizedMessage ?: "Could not load today's attendance."
+            }
         }
+        attendanceLoaded = true
     }
 
     val photoPicker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri ->
@@ -252,22 +260,39 @@ fun AttendanceScreen(
                         ),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(
-                        if (record.checkedIn) "✓" else "◷",
-                        color = if (record.checkedIn) AttendanceSuccess else AttendanceGold,
-                        fontSize = 38.sp,
-                        fontWeight = FontWeight.Black
-                    )
+                    if (!attendanceLoaded) {
+                        CircularProgressIndicator(
+                            color = AttendanceGold,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    } else {
+                        Text(
+                            if (record.checkedIn) "✓" else "◷",
+                            color = if (record.checkedIn) AttendanceSuccess else AttendanceGold,
+                            fontSize = 38.sp,
+                            fontWeight = FontWeight.Black
+                        )
+                    }
                 }
 
                 Text(
-                    if (record.checkedIn) "ATTENDANCE MARKED" else "READY TO START?",
+                    when {
+                        !attendanceLoaded -> "CHECKING TODAY'S ATTENDANCE"
+                        record.checkedIn -> "ATTENDANCE MARKED"
+                        else -> "READY TO START?"
+                    },
                     color = if (record.checkedIn) AttendanceSuccess else Color.White,
                     fontSize = 18.sp,
                     fontWeight = FontWeight.Black
                 )
                 Text(
-                    if (record.checkedIn) "Checked in at ${record.checkInTime}" else "Mark your attendance before creating today's plan.",
+                    when {
+                        !attendanceLoaded -> "Please wait a moment."
+                        record.checkedIn && record.checkedOut -> "Checked in at ${record.checkInTime} • Day ended at ${record.checkOutTime}"
+                        record.checkedIn -> "Checked in at ${record.checkInTime}"
+                        else -> "Mark your attendance before creating today's plan."
+                    },
                     color = Color.White.copy(alpha = 0.68f),
                     fontSize = 13.sp
                 )
@@ -278,17 +303,25 @@ fun AttendanceScreen(
 
         Button(
             onClick = {
-                val newRecord = record.copy(checkedIn = true, checkInTime = now())
+                val newRecord = AttendanceRecord(
+                    checkedIn = true,
+                    checkedOut = false,
+                    checkInTime = now(),
+                    checkOutTime = null
+                )
                 saving = true
                 error = null
                 scope.launch {
                     val result = repository.saveAttendance(salesCode, newRecord)
+                    if (result.isSuccess) {
+                        record = repository.getTodayAttendance(salesCode).getOrNull() ?: newRecord
+                    } else {
+                        error = result.exceptionOrNull()?.localizedMessage ?: "Could not save attendance."
+                    }
                     saving = false
-                    if (result.isSuccess) record = newRecord
-                    else error = result.exceptionOrNull()?.localizedMessage ?: "Could not save attendance."
                 }
             },
-            enabled = !record.checkedIn && !saving && salesCode.isNotBlank(),
+            enabled = attendanceLoaded && !record.checkedIn && !saving && salesCode.isNotBlank(),
             modifier = Modifier.fillMaxWidth().height(62.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
@@ -300,6 +333,7 @@ fun AttendanceScreen(
         ) {
             Text(
                 when {
+                    !attendanceLoaded -> "CHECKING..."
                     saving -> "SAVING..."
                     record.checkedIn -> "✓  ATTENDANCE MARKED"
                     else -> "MARK ATTENDANCE"
@@ -311,7 +345,7 @@ fun AttendanceScreen(
 
         Button(
             onClick = onContinue,
-            enabled = record.checkedIn && !saving,
+            enabled = attendanceLoaded && record.checkedIn && !saving,
             modifier = Modifier.fillMaxWidth().height(58.dp),
             shape = RoundedCornerShape(14.dp),
             colors = ButtonDefaults.buttonColors(
@@ -325,7 +359,7 @@ fun AttendanceScreen(
         }
 
         Text(
-            "Your check-in time is saved automatically when attendance is marked.",
+            "Attendance can be marked only once per day. Your first check-in time is kept for the full day.",
             color = Color.White.copy(alpha = 0.46f),
             fontSize = 11.sp,
             modifier = Modifier.align(Alignment.CenterHorizontally).padding(bottom = 10.dp)
