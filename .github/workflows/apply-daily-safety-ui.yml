@@ -1,0 +1,82 @@
+name: Apply Daily Safety UI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Patch daily performance safety controls
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('app/src/main/java/lk/prime/dailyactivity/MainActivity.kt')
+          text = path.read_text()
+
+          if 'CLOSE APP FOR NOW' in text:
+              print('Daily safety controls already applied.')
+              raise SystemExit(0)
+
+          text = text.replace(
+              'import android.os.Bundle\n',
+              'import android.app.Activity\nimport android.os.Bundle\n',
+              1
+          )
+          text = text.replace(
+              'import androidx.compose.ui.graphics.Color\n',
+              'import androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.platform.LocalContext\n',
+              1
+          )
+
+          marker = '''    val displayName = profile?.fullName?.ifBlank { "PRIME Staff" } ?: "PRIME Staff"\n\n    Column('''
+          replacement = '''    val displayName = profile?.fullName?.ifBlank { "PRIME Staff" } ?: "PRIME Staff"\n    val hostActivity = LocalContext.current as? Activity\n    var showEndDayConfirmation by remember { mutableStateOf(false) }\n\n    Column('''
+          if marker not in text:
+              raise SystemExit('DailyPerformanceScreen marker not found')
+          text = text.replace(marker, replacement, 1)
+
+          old_controls = '''        error?.let { Text(it, color = Color(0xFFFF7777), fontSize = 12.sp) }\n\n        Button(\n            onClick = onEndDay,\n            enabled = !dayEnded && !saving,\n            modifier = Modifier.fillMaxWidth().height(62.dp),\n            shape = RoundedCornerShape(12.dp),\n            colors = ButtonDefaults.buttonColors(\n                containerColor = PrimeGold,\n                contentColor = PrimeDark,\n                disabledContainerColor = Color(0xFF18452E),\n                disabledContentColor = Color.White.copy(alpha = 0.65f)\n            )\n        ) {\n            Text(\n                when {\n                    dayEnded -> "DAY ENDED • LOCKED"\n                    saving -> "SAVING…"\n                    else -> "END MY DAY  🔒"\n                },\n                fontSize = 17.sp,\n                fontWeight = FontWeight.Black\n            )\n        }\n\n        Text(\n            if (dayEnded) "Your workday is closed. Today's activity is locked."\n            else "Update DONE counts as you complete activities. End your day when work is finished.",\n            color = Color.White.copy(alpha = 0.58f),\n            fontSize = 10.sp,\n            modifier = Modifier.padding(bottom = 12.dp)\n        )\n'''
+
+          new_controls = '''        error?.let { Text(it, color = Color(0xFFFF7777), fontSize = 12.sp) }\n\n        Button(\n            onClick = { hostActivity?.finishAndRemoveTask() },\n            enabled = !saving,\n            modifier = Modifier.fillMaxWidth().height(56.dp),\n            shape = RoundedCornerShape(12.dp),\n            colors = ButtonDefaults.buttonColors(\n                containerColor = Color(0xFF18452E),\n                contentColor = Color.White,\n                disabledContainerColor = Color(0xFF102D20),\n                disabledContentColor = Color.White.copy(alpha = 0.45f)\n            )\n        ) {\n            Text(\n                if (saving) "SAVING…" else "CLOSE APP FOR NOW",\n                fontSize = 15.sp,\n                fontWeight = FontWeight.Black\n            )\n        }\n\n        Text(\n            "Your saved activity stays recorded. Reopen the app when you need to update more work.",\n            color = Color.White.copy(alpha = 0.58f),\n            fontSize = 10.sp\n        )\n\n        Spacer(Modifier.height(14.dp))\n        HorizontalDivider(color = Color.White.copy(alpha = 0.12f))\n        Text(\n            "FINISH WORKDAY",\n            color = PrimeGold,\n            fontSize = 11.sp,\n            fontWeight = FontWeight.Black\n        )\n\n        Button(\n            onClick = { showEndDayConfirmation = true },\n            enabled = !dayEnded && !saving,\n            modifier = Modifier.fillMaxWidth().height(62.dp),\n            shape = RoundedCornerShape(12.dp),\n            colors = ButtonDefaults.buttonColors(\n                containerColor = PrimeGold,\n                contentColor = PrimeDark,\n                disabledContainerColor = Color(0xFF18452E),\n                disabledContentColor = Color.White.copy(alpha = 0.65f)\n            )\n        ) {\n            Text(\n                when {\n                    dayEnded -> "DAY ENDED • LOCKED"\n                    saving -> "SAVING…"\n                    else -> "END MY DAY  🔒"\n                },\n                fontSize = 17.sp,\n                fontWeight = FontWeight.Black\n            )\n        }\n\n        Text(\n            if (dayEnded) "Your workday is closed. Today's activity is locked."\n            else "Only use END MY DAY when your full workday is finished. This will lock today's activity and check you out.",\n            color = Color.White.copy(alpha = 0.58f),\n            fontSize = 10.sp,\n            modifier = Modifier.padding(bottom = 12.dp)\n        )\n'''
+
+          if old_controls not in text:
+              raise SystemExit('End-day controls block not found')
+          text = text.replace(old_controls, new_controls, 1)
+
+          dialog_marker = '''        )\n    }\n}\n\nprivate val TargetGoldForDaily = Color(0xFFD6A62E)'''
+          dialog_replacement = '''        )\n    }\n\n    if (showEndDayConfirmation) {\n        AlertDialog(\n            onDismissRequest = { showEndDayConfirmation = false },\n            title = {\n                Text("END YOUR WORKDAY?", fontWeight = FontWeight.Black, color = PrimeGreen)\n            },\n            text = {\n                Text(\n                    "This will lock today's activity and check you out. You will not be able to change DONE counts after ending the day."\n                )\n            },\n            confirmButton = {\n                Button(\n                    onClick = {\n                        showEndDayConfirmation = false\n                        onEndDay()\n                    },\n                    colors = ButtonDefaults.buttonColors(\n                        containerColor = PrimeGold,\n                        contentColor = PrimeDark\n                    )\n                ) {\n                    Text("YES, END MY DAY", fontWeight = FontWeight.Black)\n                }\n            },\n            dismissButton = {\n                TextButton(onClick = { showEndDayConfirmation = false }) {\n                    Text("CANCEL", color = PrimeGreen, fontWeight = FontWeight.Bold)\n                }\n            }\n        )\n    }\n}\n\nprivate val TargetGoldForDaily = Color(0xFFD6A62E)'''
+
+          if dialog_marker not in text:
+              raise SystemExit('Dialog insertion marker not found')
+          text = text.replace(dialog_marker, dialog_replacement, 1)
+
+          path.write_text(text)
+          PY
+
+      - name: Validate patch
+        run: |
+          grep -q "CLOSE APP FOR NOW" app/src/main/java/lk/prime/dailyactivity/MainActivity.kt
+          grep -q "END YOUR WORKDAY?" app/src/main/java/lk/prime/dailyactivity/MainActivity.kt
+          git diff --check
+
+      - name: Commit safety controls
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app/src/main/java/lk/prime/dailyactivity/MainActivity.kt
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Add safe close and end-day confirmation"
+          git push
