@@ -24,6 +24,19 @@ private val SalesReportGold = Color(0xFFD6A62E)
 private val SalesReportRed = Color(0xFFD32F2F)
 private val SalesReportBlue = Color(0xFF1565C0)
 
+private data class ZoneMonthlySalesSummary(
+    val zone: String,
+    val members: List<StaffMonthlySalesSummary>
+) {
+    val staffCount: Int get() = members.size
+    val targetsSet: Int get() = members.count { it.targetLocked }
+    val totalTarget: Long get() = members.sumOf { it.targetAmount }
+    val totalAchieved: Long get() = members.sumOf { it.achievedAmount }
+    val balance: Long get() = (totalTarget - totalAchieved).coerceAtLeast(0L)
+    val achievementPercent: Double
+        get() = if (totalTarget <= 0L) 0.0 else totalAchieved.toDouble() * 100.0 / totalTarget.toDouble()
+}
+
 @Composable
 fun MonthlySalesReportScreen(
     repository: DataRepository,
@@ -33,6 +46,7 @@ fun MonthlySalesReportScreen(
     var rows by remember { mutableStateOf<List<StaffMonthlySalesSummary>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
+    var selectedZone by remember { mutableStateOf<String?>(null) }
     var selectedStaff by remember { mutableStateOf<StaffMonthlySalesSummary?>(null) }
     val currentMonth = remember { salesCurrentMonthKey() }
 
@@ -45,7 +59,11 @@ fun MonthlySalesReportScreen(
         loading = false
     }
 
-    LaunchedEffect(selectedMonth) { load() }
+    LaunchedEffect(selectedMonth) {
+        selectedZone = null
+        selectedStaff = null
+        load()
+    }
 
     selectedStaff?.let { member ->
         SalesAchievementHistoryScreen(
@@ -56,11 +74,30 @@ fun MonthlySalesReportScreen(
         return
     }
 
+    selectedZone?.let { zoneName ->
+        ZoneSalesPerformanceScreen(
+            zoneName = zoneName,
+            members = rows.filter { it.zone.ifBlank { "Unassigned" } == zoneName },
+            monthKey = selectedMonth,
+            onBack = { selectedZone = null },
+            onStaff = { selectedStaff = it }
+        )
+        return
+    }
+
     val totalTarget = rows.sumOf { it.targetAmount }
     val totalAchieved = rows.sumOf { it.achievedAmount }
     val totalBalance = (totalTarget - totalAchieved).coerceAtLeast(0L)
     val overallPercent = if (totalTarget <= 0L) 0.0 else totalAchieved.toDouble() * 100.0 / totalTarget.toDouble()
     val targetsSet = rows.count { it.targetLocked }
+    val zones = rows
+        .groupBy { it.zone.ifBlank { "Unassigned" } }
+        .map { (zone, members) -> ZoneMonthlySalesSummary(zone, members) }
+        .sortedWith(
+            compareByDescending<ZoneMonthlySalesSummary> { it.achievementPercent }
+                .thenByDescending { it.totalAchieved }
+                .thenBy { it.zone }
+        )
 
     Column(Modifier.fillMaxSize()) {
         Surface(color = SalesReportGreen, modifier = Modifier.fillMaxWidth()) {
@@ -129,47 +166,154 @@ fun MonthlySalesReportScreen(
                 }
 
                 item {
-                    Text("STAFF PERFORMANCE", color = SalesReportGreen, fontSize = 18.sp, fontWeight = FontWeight.Black)
+                    Text("ZONE PERFORMANCE", color = SalesReportGreen, fontSize = 18.sp, fontWeight = FontWeight.Black)
                 }
 
-                items(rows) { row ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().clickable { selectedStaff = row },
-                        shape = RoundedCornerShape(14.dp)
-                    ) {
-                        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Column(Modifier.weight(1f)) {
-                                    Text(row.fullName, fontWeight = FontWeight.Bold)
-                                    Text("${row.salesCode} • ${row.zone}", color = Color.Gray, fontSize = 12.sp)
-                                }
-                                Text(
-                                    if (row.targetLocked) "${salesPercent(row.achievementPercent)}%" else "NO TARGET",
-                                    color = if (row.targetLocked) SalesReportGreen else SalesReportRed,
-                                    fontWeight = FontWeight.Black
-                                )
-                            }
-                            HorizontalDivider()
-                            SalesCompactRow("Target", if (row.targetLocked) "Rs. ${salesMoney(row.targetAmount)}" else "Not set")
-                            SalesCompactRow("Achieved", "Rs. ${salesMoney(row.achievedAmount)}")
-                            SalesCompactRow("Balance", if (row.targetLocked) "Rs. ${salesMoney(row.balance)}" else "—")
-                            if (row.targetLocked) {
-                                LinearProgressIndicator(
-                                    progress = { (row.achievementPercent / 100.0).coerceIn(0.0, 1.0).toFloat() },
-                                    modifier = Modifier.fillMaxWidth().height(6.dp),
-                                    color = SalesReportGreen,
-                                    trackColor = Color.LightGray.copy(alpha = 0.45f)
-                                )
-                            }
-                            Text("Tap for daily achievement history ›", color = Color.Gray, fontSize = 11.sp)
-                        }
-                    }
+                items(zones) { zone ->
+                    ZoneSalesCard(zone = zone) { selectedZone = zone.zone }
                 }
 
-                if (rows.isEmpty()) {
+                if (zones.isEmpty()) {
                     item { Text("No approved staff records available.", color = Color.Gray) }
                 }
                 item { Spacer(Modifier.height(12.dp)) }
+            }
+        }
+    }
+}
+
+@Composable
+private fun ZoneSalesCard(
+    zone: ZoneMonthlySalesSummary,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth().clickable { onClick() },
+        shape = RoundedCornerShape(14.dp)
+    ) {
+        Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text(zone.zone.uppercase(Locale.US), fontWeight = FontWeight.Black, color = SalesReportGreen)
+                    Text(
+                        "Staff ${zone.staffCount} • Targets ${zone.targetsSet}/${zone.staffCount}",
+                        color = Color.Gray,
+                        fontSize = 12.sp
+                    )
+                }
+                Text(
+                    "${salesPercent(zone.achievementPercent)}%",
+                    color = SalesReportGold,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Black
+                )
+            }
+            HorizontalDivider()
+            SalesCompactRow("Target", "Rs. ${salesMoney(zone.totalTarget)}")
+            SalesCompactRow("Achieved", "Rs. ${salesMoney(zone.totalAchieved)}")
+            SalesCompactRow("Balance", "Rs. ${salesMoney(zone.balance)}")
+            LinearProgressIndicator(
+                progress = { (zone.achievementPercent / 100.0).coerceIn(0.0, 1.0).toFloat() },
+                modifier = Modifier.fillMaxWidth().height(6.dp),
+                color = SalesReportGreen,
+                trackColor = Color.LightGray.copy(alpha = 0.45f)
+            )
+            Text("Tap to view staff in this zone ›", color = Color.Gray, fontSize = 11.sp)
+        }
+    }
+}
+
+@Composable
+private fun ZoneSalesPerformanceScreen(
+    zoneName: String,
+    members: List<StaffMonthlySalesSummary>,
+    monthKey: String,
+    onBack: () -> Unit,
+    onStaff: (StaffMonthlySalesSummary) -> Unit
+) {
+    val zone = remember(zoneName, members) { ZoneMonthlySalesSummary(zoneName, members) }
+
+    Column(Modifier.fillMaxSize()) {
+        Surface(color = SalesReportGreen, modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(18.dp)) {
+                Text(
+                    "‹  ZONE PERFORMANCE",
+                    color = Color.White,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.clickable { onBack() }
+                )
+                Text(zoneName.uppercase(Locale.US), color = SalesReportGold, fontSize = 23.sp, fontWeight = FontWeight.Black)
+                Text(salesMonthDisplay(monthKey), color = Color.White)
+            }
+        }
+
+        LazyColumn(
+            modifier = Modifier.fillMaxSize().padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item {
+                Card(Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                        Text("ZONE SUMMARY", color = SalesReportGreen, fontWeight = FontWeight.Black)
+                        SalesMoneyRow("TARGET", zone.totalTarget, SalesReportGreen)
+                        SalesMoneyRow("ACHIEVED", zone.totalAchieved, SalesReportBlue)
+                        SalesMoneyRow("BALANCE", zone.balance, SalesReportRed)
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Text("ACHIEVEMENT", fontWeight = FontWeight.Bold)
+                            Text(
+                                "${salesPercent(zone.achievementPercent)}%",
+                                color = SalesReportGold,
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                        Text(
+                            "Staff ${zone.staffCount} • Targets set ${zone.targetsSet}/${zone.staffCount}",
+                            color = Color.Gray,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+            }
+
+            item {
+                Text("STAFF", color = SalesReportGreen, fontSize = 18.sp, fontWeight = FontWeight.Black)
+            }
+
+            items(
+                members.sortedWith(
+                    compareByDescending<StaffMonthlySalesSummary> { it.achievementPercent }
+                        .thenByDescending { it.achievedAmount }
+                        .thenBy { it.fullName }
+                )
+            ) { row ->
+                Card(
+                    modifier = Modifier.fillMaxWidth().clickable { onStaff(row) },
+                    shape = RoundedCornerShape(14.dp)
+                ) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                            Column(Modifier.weight(1f)) {
+                                Text(row.fullName, fontWeight = FontWeight.Bold)
+                                Text(row.salesCode, color = Color.Gray, fontSize = 12.sp)
+                            }
+                            Text(
+                                if (row.targetLocked) "${salesPercent(row.achievementPercent)}%" else "NO TARGET",
+                                color = if (row.targetLocked) SalesReportGreen else SalesReportRed,
+                                fontWeight = FontWeight.Black
+                            )
+                        }
+                        HorizontalDivider()
+                        SalesCompactRow("Target", if (row.targetLocked) "Rs. ${salesMoney(row.targetAmount)}" else "Not set")
+                        SalesCompactRow("Achieved", "Rs. ${salesMoney(row.achievedAmount)}")
+                        SalesCompactRow("Balance", if (row.targetLocked) "Rs. ${salesMoney(row.balance)}" else "—")
+                        Text("Tap for individual monthly details ›", color = Color.Gray, fontSize = 11.sp)
+                    }
+                }
+            }
+
+            if (members.isEmpty()) {
+                item { Text("No staff records in this zone.", color = Color.Gray) }
             }
         }
     }
@@ -185,7 +329,7 @@ private fun SalesAchievementHistoryScreen(
         Surface(color = SalesReportGreen, modifier = Modifier.fillMaxWidth()) {
             Column(Modifier.padding(18.dp)) {
                 Text(
-                    "‹  SALES HISTORY",
+                    "‹  STAFF MONTHLY DETAILS",
                     color = Color.White,
                     fontWeight = FontWeight.Bold,
                     modifier = Modifier.clickable { onBack() }
