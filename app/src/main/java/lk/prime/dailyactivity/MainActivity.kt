@@ -34,7 +34,7 @@ private val FollowGold = Color(0xFFE2A91E)
 private val AppointmentOrange = Color(0xFFEA6B16)
 private val PresentationPurple = Color(0xFF9B58E8)
 
-enum class AppScreen { LOGIN, REGISTER, PENDING, ATTENDANCE, DAILY, MANAGEMENT }
+enum class AppScreen { LOGIN, REGISTER, PENDING, ATTENDANCE, DAILY, MONTHLY_TARGET, MANAGEMENT }
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -166,7 +166,18 @@ fun PrimeDailyActivityApp() {
                     }
                 )
 
-                AppScreen.DAILY -> DailyActivityScreen(currentProfile, repository)
+                AppScreen.DAILY -> DailyActivityScreen(
+                    profile = currentProfile,
+                    repository = repository,
+                    onMonthlyTarget = { screen = AppScreen.MONTHLY_TARGET }
+                )
+
+                AppScreen.MONTHLY_TARGET -> MonthlyTargetScreen(
+                    profile = currentProfile,
+                    repository = repository,
+                    onBack = { screen = AppScreen.DAILY }
+                )
+
                 AppScreen.MANAGEMENT -> currentProfile?.let { ManagementDashboardScreen(it, repository) }
             }
         }
@@ -174,7 +185,11 @@ fun PrimeDailyActivityApp() {
 }
 
 @Composable
-private fun DailyActivityScreen(profile: StaffProfile?, repository: DataRepository) {
+private fun DailyActivityScreen(
+    profile: StaffProfile?,
+    repository: DataRepository,
+    onMonthlyTarget: () -> Unit
+) {
     val salesCode = profile?.salesCode.orEmpty()
     val scope = rememberCoroutineScope()
 
@@ -303,6 +318,7 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
             onFollowChange = { followPlan = it.coerceAtLeast(0) },
             onAppointmentChange = { appointmentPlan = it.coerceAtLeast(0) },
             onPresentationChange = { presentationPlan = it.coerceAtLeast(0) },
+            onMonthlyTarget = onMonthlyTarget,
             onStart = {
                 save(currentActivity(planLocked = true, dayLocked = false)) {
                     dayStarted = true
@@ -341,6 +357,7 @@ private fun DailyActivityScreen(profile: StaffProfile?, repository: DataReposito
             presentationDone = it.coerceAtLeast(0)
             save(currentActivity())
         },
+        onMonthlyTarget = onMonthlyTarget,
         onEndDay = { endDay() }
     )
 }
@@ -363,6 +380,7 @@ private fun DailyPerformanceScreen(
     onFollowChange: (Int) -> Unit,
     onAppointmentChange: (Int) -> Unit,
     onPresentationChange: (Int) -> Unit,
+    onMonthlyTarget: () -> Unit,
     onEndDay: () -> Unit
 ) {
     val totalPlan = prospectPlan + followPlan + appointmentPlan + presentationPlan
@@ -405,6 +423,15 @@ private fun DailyPerformanceScreen(
                     Text(date, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                 }
             }
+        }
+
+        Button(
+            onClick = onMonthlyTarget,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0E3A25), contentColor = TargetGoldForDaily)
+        ) {
+            Text("MONTHLY SALES TARGET  →", fontSize = 13.sp, fontWeight = FontWeight.Black)
         }
 
         Surface(
@@ -488,6 +515,8 @@ private fun DailyPerformanceScreen(
     }
 }
 
+private val TargetGoldForDaily = Color(0xFFD6A62E)
+
 @Composable
 private fun DoneTargetCard(
     icon: String,
@@ -527,6 +556,7 @@ private fun MyDayPlanScreen(
     onFollowChange: (Int) -> Unit,
     onAppointmentChange: (Int) -> Unit,
     onPresentationChange: (Int) -> Unit,
+    onMonthlyTarget: () -> Unit,
     onStart: () -> Unit
 ) {
     val date = remember { SimpleDateFormat("dd MMM yyyy", Locale.US).format(Date()) }
@@ -591,6 +621,15 @@ private fun MyDayPlanScreen(
                     Text(day, color = Color.White.copy(alpha = 0.72f), fontSize = 10.sp)
                 }
             }
+        }
+
+        Button(
+            onClick = onMonthlyTarget,
+            modifier = Modifier.fillMaxWidth().height(50.dp),
+            shape = RoundedCornerShape(12.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF0E3A25), contentColor = PrimeGold)
+        ) {
+            Text("MONTHLY SALES TARGET  →", fontSize = 13.sp, fontWeight = FontWeight.Black)
         }
 
         DarkPlanCard {
