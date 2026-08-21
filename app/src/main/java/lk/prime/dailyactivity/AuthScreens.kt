@@ -20,6 +20,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.PasswordVisualTransformation
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
@@ -70,6 +71,7 @@ fun LoginScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .statusBarsPadding()
+                .navigationBarsPadding()
                 .imePadding()
                 .verticalScroll(rememberScrollState())
                 .padding(horizontal = 24.dp, vertical = 12.dp),
@@ -181,6 +183,21 @@ fun LoginScreen(
             TextButton(onClick = onRegister, enabled = !loading) {
                 Text("New staff? Register here", color = LoginGold, fontWeight = FontWeight.Bold)
             }
+
+            Spacer(Modifier.height(6.dp))
+            Text(
+                "PRIME Daily Activity • v1.0.0",
+                color = Color.White.copy(alpha = 0.70f),
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.Center
+            )
+            Text(
+                "© 2026 Damith Hettiarachchi. All Rights Reserved.",
+                color = Color.White.copy(alpha = 0.48f),
+                fontSize = 10.sp,
+                textAlign = TextAlign.Center
+            )
         }
     }
 }
