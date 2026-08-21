@@ -6,4 +6,4 @@ PRIME Daily Activity, including its source code, application design, workflows, 
 
 No part of this software may be copied, reproduced, modified, redistributed, published, sublicensed, sold, or used to create derivative software without the prior written permission of the copyright owner, except where applicable law provides otherwise.
 
-Version 1.0.0 — 2026
+Version 1.0.1 — 2026
