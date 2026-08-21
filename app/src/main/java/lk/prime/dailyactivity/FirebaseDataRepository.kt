@@ -108,6 +108,53 @@ class FirebaseDataRepository(private val db: FirebaseFirestore = FirebaseFiresto
         }.await()
     }
 
+    override suspend fun getMonthlySalesReport(monthKey: String): Result<List<StaffMonthlySalesSummary>> = runCatching {
+        val people = db.collection("staff")
+            .whereEqualTo("approvalStatus", ApprovalStatus.APPROVED.name)
+            .get().await().documents.mapNotNull { it.toStaffProfile() }
+
+        val targetDocs = db.collection("monthlyTargets")
+            .whereEqualTo("monthKey", monthKey)
+            .get().await().documents
+
+        val targetsByCode = targetDocs.mapNotNull { doc ->
+            val code = doc.getString("salesCode") ?: return@mapNotNull null
+            @Suppress("UNCHECKED_CAST")
+            val achievementsMap = doc.get("achievements") as? Map<String, Any?> ?: emptyMap()
+            val achievements = achievementsMap.entries.mapNotNull { (date, value) ->
+                val amount = (value as? Number)?.toLong() ?: return@mapNotNull null
+                SalesAchievementDay(date = date, amount = amount)
+            }.sortedByDescending { it.date }
+
+            code to StaffMonthlySalesSummary(
+                salesCode = code,
+                fullName = "",
+                zone = "",
+                targetAmount = (doc.get("targetAmount") as? Number)?.toLong() ?: 0L,
+                targetLocked = doc.getBoolean("targetLocked") ?: false,
+                achievedAmount = (doc.get("achievedAmount") as? Number)?.toLong() ?: achievements.sumOf { it.amount },
+                achievements = achievements
+            )
+        }.toMap()
+
+        people.map { person ->
+            val target = targetsByCode[person.salesCode]
+            StaffMonthlySalesSummary(
+                salesCode = person.salesCode,
+                fullName = person.fullName,
+                zone = person.zone,
+                targetAmount = target?.targetAmount ?: 0L,
+                targetLocked = target?.targetLocked ?: false,
+                achievedAmount = target?.achievedAmount ?: 0L,
+                achievements = target?.achievements.orEmpty()
+            )
+        }.sortedWith(
+            compareByDescending<StaffMonthlySalesSummary> { it.achievementPercent }
+                .thenByDescending { it.achievedAmount }
+                .thenBy { it.fullName }
+        )
+    }
+
     override suspend fun getZoneSummaries(zone: String) = runCatching { summaries(zone, false) }
     override suspend fun getAllIslandSummaries() = runCatching { summaries(null, true) }
 
