@@ -32,3 +32,11 @@ data class DailyActivity(
     val planLocked: Boolean = false,
     val dayLocked: Boolean = false
 )
+
+data class MonthlySalesTarget(
+    val monthKey: String = "",
+    val targetAmount: Long = 0L,
+    val targetLocked: Boolean = false,
+    val achievedAmount: Long = 0L,
+    val todayAchievement: Long = 0L
+)
